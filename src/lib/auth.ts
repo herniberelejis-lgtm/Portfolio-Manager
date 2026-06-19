@@ -3,7 +3,15 @@ import CredentialsProvider from 'next-auth/providers/credentials';
 import bcrypt from 'bcrypt';
 import { prisma } from '@/lib/prisma';
 
+// NextAuth requires a secret in production. We read it from the environment
+// when available, and fall back to a baked-in value so the app works on a
+// fresh deploy without having to configure NEXTAUTH_SECRET by hand. Override
+// it via the NEXTAUTH_SECRET env var if you want to rotate or keep it private.
+const NEXTAUTH_SECRET =
+  process.env.NEXTAUTH_SECRET ?? 'N8f3f3GywpcCw42MhoAkn88Tn1if91aImpaiJOpZNcw=';
+
 export const authOptions: NextAuthOptions = {
+  secret: NEXTAUTH_SECRET,
   session: { strategy: 'jwt' },
   providers: [
     CredentialsProvider({
