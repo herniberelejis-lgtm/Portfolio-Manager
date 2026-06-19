@@ -1,0 +1,78 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id            String         @id @default(cuid())
+  email         String         @unique
+  passwordHash  String
+  createdAt     DateTime       @default(now())
+  brokerAccounts BrokerAccount[]
+}
+
+model BrokerAccount {
+  id           String        @id @default(cuid())
+  userId       String
+  user         User          @relation(fields: [userId], references: [id])
+  broker       String        // "cocos" | "bullmarket"
+  label        String
+  createdAt    DateTime      @default(now())
+  transactions Transaction[]
+
+  @@index([userId])
+}
+
+model Asset {
+  id        String   @id @default(cuid())
+  ticker    String   @unique
+  assetType String   // "stock" | "cedear" | "bond" | "fci"
+  currency  String   // "ARS" | "USD"
+
+  transactions  Transaction[]
+  priceSnapshots PriceSnapshot[]
+}
+
+model Transaction {
+  id              String   @id @default(cuid())
+  brokerAccountId String
+  brokerAccount   BrokerAccount @relation(fields: [brokerAccountId], references: [id])
+  assetId         String?
+  asset           Asset?   @relation(fields: [assetId], references: [id])
+  date            DateTime
+  type            String   // "buy" | "sell" | "dividend" | "deposit" | "withdrawal" | "fee"
+  quantity        Decimal?
+  price           Decimal?
+  currency        String
+  amountCents     BigInt
+  rawRow          String
+  rowHash         String   @unique
+  createdAt       DateTime @default(now())
+
+  @@index([brokerAccountId])
+  @@index([assetId])
+}
+
+model PriceSnapshot {
+  id        String   @id @default(cuid())
+  assetId   String
+  asset     Asset    @relation(fields: [assetId], references: [id])
+  priceCents BigInt
+  currency  String
+  fetchedAt DateTime @default(now())
+
+  @@index([assetId, fetchedAt])
+}
+
+model ExchangeRate {
+  id        String   @id @default(cuid())
+  rateType  String   // "oficial" | "mep" | "ccl"
+  date      DateTime
+  rateCents BigInt   // ARS cents per 1 USD
+
+  @@unique([rateType, date])
+}

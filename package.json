@@ -1,0 +1,36 @@
+{
+  "name": "portfolio-tracker",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "lint": "next lint",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@prisma/client": "^5.22.0",
+    "bcrypt": "^6.0.0",
+    "csv-parse": "^7.0.0",
+    "decimal.js": "^10.6.0",
+    "exceljs": "^4.4.0",
+    "next": "14.2.35",
+    "next-auth": "^4.24.14",
+    "prisma": "^5.22.0",
+    "react": "^18",
+    "react-dom": "^18",
+    "recharts": "^3.8.1"
+  },
+  "devDependencies": {
+    "@types/bcrypt": "^6.0.0",
+    "@types/node": "^20",
+    "@types/react": "^18",
+    "@types/react-dom": "^18",
+    "@vitejs/plugin-react": "^6.0.2",
+    "@vitest/coverage-v8": "^4.1.9",
+    "playwright": "^1.61.0",
+    "typescript": "^5",
+    "vitest": "^4.1.9"
+  }
+}

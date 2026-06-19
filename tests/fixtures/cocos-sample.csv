@@ -1,0 +1,5 @@
+Fecha,Tipo,Ticker,Cantidad,Precio,Moneda,Importe
+2026-01-15,Compra,GGAL,10,5000.00,ARS,50000.00
+2026-01-20,Venta,GGAL,5,5500.00,ARS,27500.00
+2026-02-01,Ingreso de fondos,,,,ARS,100000.00
+2026-02-10,Dividendo,GGAL,,,ARS,1200.00

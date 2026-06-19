@@ -1,0 +1,7 @@
+.worktrees/
+node_modules/
+.next/
+.env
+prisma/dev.db
+tsconfig.tsbuildinfo
+coverage/
