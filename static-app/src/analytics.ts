@@ -194,3 +194,38 @@ export function cashFlows(txs: ParsedTransaction[]): CashFlows {
   }
   return { deposits: d, withdrawals: w, dividends: div, netContributed: d - w };
 }
+
+/** Current ARS cash balance left in the account (deposits/sells/dividends in,
+ *  withdrawals/buys/fees out). USD legs are tiny here and ignored. */
+export function arsCashBalanceCents(txs: ParsedTransaction[]): bigint {
+  let bal = 0n;
+  for (const t of txs) {
+    if (t.currency !== 'ARS') continue;
+    if (t.type === 'deposit' || t.type === 'sell' || t.type === 'dividend') bal += t.amountCents;
+    else if (t.type === 'withdrawal' || t.type === 'buy' || t.type === 'fee') bal -= t.amountCents;
+  }
+  return bal;
+}
+
+export interface Flow { date: Date; amount: number; }
+
+/** Money-weighted return (XIRR) via bisection. amount sign: money the investor
+ *  receives is positive, money paid in is negative. Returns an annual rate. */
+export function xirr(flows: Flow[]): number | null {
+  if (flows.length < 2) return null;
+  const sorted = [...flows].sort((a, b) => a.date.getTime() - b.date.getTime());
+  const t0 = sorted[0].date.getTime();
+  const yrs = (d: Date) => (d.getTime() - t0) / (365.25 * 864e5);
+  const npv = (r: number) => sorted.reduce((s, f) => s + f.amount / Math.pow(1 + r, yrs(f.date)), 0);
+  let lo = -0.9999, hi = 100;
+  let flo = npv(lo);
+  if (flo * npv(hi) > 0) return null; // no sign change -> undefined
+  for (let i = 0; i < 300; i++) {
+    const mid = (lo + hi) / 2;
+    const fm = npv(mid);
+    if (Math.abs(fm) < 1e-4) return mid;
+    if (flo * fm < 0) hi = mid;
+    else { lo = mid; flo = fm; }
+  }
+  return (lo + hi) / 2;
+}

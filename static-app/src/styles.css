@@ -404,3 +404,42 @@ body {
   align-items: center;
   gap: 10px;
 }
+
+.cardSub {
+  color: var(--muted);
+  font-size: 0.78rem;
+}
+
+.concRow {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 8px 0;
+}
+
+.concTicker {
+  width: 72px;
+  font-weight: 700;
+  flex-shrink: 0;
+}
+
+.concBarWrap {
+  flex: 1;
+  background: var(--panel2);
+  border-radius: 6px;
+  height: 14px;
+  overflow: hidden;
+}
+
+.concBar {
+  height: 100%;
+  background: var(--accent);
+  border-radius: 6px;
+}
+
+.concPct {
+  width: 86px;
+  text-align: right;
+  flex-shrink: 0;
+  font-size: 0.9rem;
+}

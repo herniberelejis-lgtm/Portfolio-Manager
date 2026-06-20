@@ -19,6 +19,7 @@ import {
 import { Auth } from './Auth';
 import { Charts } from './Charts';
 import { Movimientos } from './Movimientos';
+import { Analisis } from './Analisis';
 
 function centsToPesos(cents: bigint): number {
   return Number(cents) / 100;
@@ -77,7 +78,7 @@ export function App() {
   const [message, setMessage] = useState('');
   const [busy, setBusy] = useState(false);
   const [loadingData, setLoadingData] = useState(false);
-  const [tab, setTab] = useState<'resumen' | 'movimientos'>('resumen');
+  const [tab, setTab] = useState<'resumen' | 'analisis' | 'movimientos'>('resumen');
   const [pricesUpdatedAt, setPricesUpdatedAt] = useState<Date | null>(null);
 
   // Track the auth session.
@@ -370,6 +371,12 @@ export function App() {
               Resumen
             </button>
             <button
+              className={`tab ${tab === 'analisis' ? 'tabActive' : ''}`}
+              onClick={() => setTab('analisis')}
+            >
+              Análisis
+            </button>
+            <button
               className={`tab ${tab === 'movimientos' ? 'tabActive' : ''}`}
               onClick={() => setTab('movimientos')}
             >
@@ -379,6 +386,8 @@ export function App() {
 
           {tab === 'movimientos' ? (
             <Movimientos transactions={transactions} />
+          ) : tab === 'analisis' ? (
+            <Analisis transactions={transactions} prices={prices} />
           ) : (
           <>
           <section className="section">

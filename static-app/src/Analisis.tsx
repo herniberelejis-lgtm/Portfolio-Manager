@@ -1,0 +1,267 @@
+import { useMemo } from 'react';
+import type { ParsedTransaction } from './portfolio';
+import {
+  arsCashBalanceCents,
+  byAssetClass,
+  cashFlows,
+  computeCosts,
+  operationalQuality,
+  perTicker,
+  xirr,
+  type Flow,
+} from './analytics';
+
+function pesos(cents: bigint): number {
+  return Number(cents) / 100;
+}
+function money(cents: bigint, currency = 'ARS'): string {
+  const sym = currency === 'USD' ? 'US$' : '$';
+  return `${sym} ${pesos(cents).toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+}
+function pct(n: number | null | undefined, d = 1): string {
+  return n == null ? '—' : `${n.toFixed(d)}%`;
+}
+
+// Rough liquidity by asset class (data on traded volume isn't available in a
+// static app, so this is an estimate).
+const LIQUIDITY: Record<string, 'alta' | 'media' | 'baja'> = {
+  CEDEAR: 'alta',
+  FCI: 'alta',
+  'Acción ARG': 'media',
+  'Bono/ON': 'media',
+  'Dólar MEP': 'alta',
+  Otro: 'media',
+};
+
+export function Analisis({
+  transactions,
+  prices,
+}: {
+  transactions: ParsedTransaction[];
+  prices: Record<string, bigint>;
+}) {
+  const a = useMemo(() => {
+    const stats = perTicker(transactions);
+    const costs = computeCosts(transactions);
+    const cf = cashFlows(transactions);
+    const oq = operationalQuality(stats);
+    const classes = byAssetClass(stats);
+
+    const held = stats.filter((s) => s.heldQty > 0);
+    let currentValue = 0n;
+    let heldCost = 0n;
+    const priceAlerts: { ticker: string; diffPct: number }[] = [];
+    for (const s of held) {
+      const price = prices[s.ticker] ?? s.avgCostCents;
+      currentValue += BigInt(Math.round(s.heldQty)) * price;
+      heldCost += s.heldCostCents;
+      const diff = Number(s.avgCostCents) > 0 ? ((Number(price) - Number(s.avgCostCents)) / Number(s.avgCostCents)) * 100 : 0;
+      if (Math.abs(diff) >= 15) priceAlerts.push({ ticker: s.ticker, diffPct: diff });
+    }
+    const latent = currentValue - heldCost;
+    const realized = stats.reduce((s, t) => s + t.realizedCents, 0n);
+    const totalPnl = realized + latent + cf.dividends;
+    const returnPct = cf.netContributed > 0n ? (Number(totalPnl) / Number(cf.netContributed)) * 100 : null;
+
+    // money-weighted return (XIRR): deposits out, withdrawals in, terminal = holdings + cash
+    const cash = arsCashBalanceCents(transactions);
+    const flows: Flow[] = [];
+    for (const t of transactions) {
+      if (t.currency !== 'ARS') continue;
+      if (t.type === 'deposit') flows.push({ date: t.date, amount: -pesos(t.amountCents) });
+      else if (t.type === 'withdrawal') flows.push({ date: t.date, amount: pesos(t.amountCents) });
+    }
+    flows.push({ date: new Date(), amount: pesos(currentValue + cash) });
+    const tir = xirr(flows);
+
+    // concentration by ticker (ARS, at market)
+    const heldArs = held.filter((s) => s.currency === 'ARS');
+    let totMv = 0n;
+    const mvByTicker = heldArs.map((s) => {
+      const mv = BigInt(Math.round(s.heldQty)) * (prices[s.ticker] ?? s.avgCostCents);
+      totMv += mv;
+      return { ticker: s.ticker, mv, assetClass: s.assetClass };
+    });
+    const conc = mvByTicker
+      .map((x) => ({ ...x, pct: totMv > 0n ? (Number(x.mv) / Number(totMv)) * 100 : 0 }))
+      .sort((x, y) => y.pct - x.pct);
+
+    const maxPos = conc.length ? conc[0].pct : 0;
+    const maxClass = classes.length ? Math.max(...classes.map((c) => c.pctOfHeld)) : 0;
+    const riskLevel = maxPos > 40 || maxClass > 70 ? 'Alto' : maxPos > 20 || maxClass > 50 ? 'Medio' : 'Bajo';
+
+    // liquidity
+    let liqAlta = 0n;
+    for (const x of mvByTicker) if (LIQUIDITY[x.assetClass] === 'alta') liqAlta += x.mv;
+    const liqAltaPct = totMv > 0n ? (Number(liqAlta) / Number(totMv)) * 100 : 0;
+
+    const realizedRows = stats.filter((s) => s.realizedCents !== 0n).sort((x, y) => Number(y.realizedCents - x.realizedCents));
+
+    return {
+      stats, costs, cf, oq, classes, currentValue, latent, realized, totalPnl, returnPct,
+      tir, conc, riskLevel, liqAltaPct, priceAlerts, realizedRows, held,
+    };
+  }, [transactions, prices]);
+
+  return (
+    <div>
+      {/* Executive summary */}
+      <section className="section">
+        <h2 className="sectionTitle">Resumen ejecutivo</h2>
+        <div className="cards">
+          <div className="card">
+            <span className="cardLabel">Valor actual</span>
+            <span className="cardValue">{money(a.currentValue)}</span>
+          </div>
+          <div className={`card ${a.totalPnl >= 0n ? 'pos' : 'neg'}`}>
+            <span className="cardLabel">Ganancia total</span>
+            <span className="cardValue">{money(a.totalPnl)}</span>
+            <span className="cardSub">{pct(a.returnPct)} sobre aporte neto</span>
+          </div>
+          <div className={`card ${(a.tir ?? 0) >= 0 ? 'pos' : 'neg'}`}>
+            <span className="cardLabel">TIR anual (estimada)</span>
+            <span className="cardValue">{a.tir != null ? pct(a.tir * 100) : '—'}</span>
+          </div>
+          <div className={`card ${a.riskLevel === 'Alto' ? 'neg' : a.riskLevel === 'Bajo' ? 'pos' : ''}`}>
+            <span className="cardLabel">Nivel de riesgo</span>
+            <span className="cardValue">{a.riskLevel}</span>
+            <span className="cardSub">por concentración</span>
+          </div>
+        </div>
+      </section>
+
+      {/* Return breakdown */}
+      <section className="section">
+        <h2 className="sectionTitle">Retorno</h2>
+        <div className="cards">
+          <div className={`card ${a.realized >= 0n ? 'pos' : 'neg'}`}>
+            <span className="cardLabel">P&amp;L realizado</span>
+            <span className="cardValue">{money(a.realized)}</span>
+          </div>
+          <div className={`card ${a.latent >= 0n ? 'pos' : 'neg'}`}>
+            <span className="cardLabel">P&amp;L latente</span>
+            <span className="cardValue">{money(a.latent)}</span>
+          </div>
+          <div className="card">
+            <span className="cardLabel">Dividendos</span>
+            <span className="cardValue">{money(a.cf.dividends)}</span>
+          </div>
+          <div className="card">
+            <span className="cardLabel">Aporte neto</span>
+            <span className="cardValue">{money(a.cf.netContributed)}</span>
+          </div>
+        </div>
+      </section>
+
+      {/* Operational quality */}
+      <section className="section">
+        <h2 className="sectionTitle">Calidad operativa</h2>
+        <div className="cards">
+          <div className="card">
+            <span className="cardLabel">Win rate</span>
+            <span className="cardValue">{pct(a.oq.winRatePct)}</span>
+            <span className="cardSub">{a.oq.wins} de {a.oq.totalSales} ventas</span>
+          </div>
+          <div className="card">
+            <span className="cardLabel">Riesgo / Recompensa</span>
+            <span className="cardValue">{a.oq.riskReward != null ? a.oq.riskReward.toFixed(2) : '—'}</span>
+            <span className="cardSub">ganás vs perdés</span>
+          </div>
+          <div className="card">
+            <span className="cardLabel">Ganancia prom.</span>
+            <span className="cardValue pos">{money(a.oq.avgWinCents)}</span>
+          </div>
+          <div className="card">
+            <span className="cardLabel">Pérdida prom.</span>
+            <span className="cardValue neg">{money(a.oq.avgLossCents)}</span>
+          </div>
+        </div>
+      </section>
+
+      {/* Concentration */}
+      <section className="section">
+        <h2 className="sectionTitle">Concentración</h2>
+        {a.conc.map((c) => (
+          <div className="concRow" key={c.ticker}>
+            <span className="concTicker">{c.ticker}</span>
+            <div className="concBarWrap">
+              <div className="concBar" style={{ width: `${Math.min(c.pct, 100)}%` }} />
+            </div>
+            <span className={`concPct ${c.pct > 20 ? 'neg' : ''}`}>
+              {c.pct.toFixed(1)}% {c.pct > 20 ? '⚠️' : ''}
+            </span>
+          </div>
+        ))}
+        <p className="hint">
+          Por clase:{' '}
+          {a.classes.map((c) => `${c.assetClass} ${c.pctOfHeld.toFixed(0)}%`).join(' · ')}.
+          {a.classes.some((c) => c.pctOfHeld > 50) && ' ⚠️ Una clase supera el 50%.'}
+        </p>
+      </section>
+
+      {/* Price alerts */}
+      {a.priceAlerts.length > 0 && (
+        <section className="section">
+          <h2 className="sectionTitle">Alertas de precio (±15% vs costo)</h2>
+          {a.priceAlerts.map((p) => (
+            <p key={p.ticker} className={p.diffPct >= 0 ? 'pos' : 'neg'}>
+              {p.ticker}: {p.diffPct >= 0 ? '+' : ''}
+              {p.diffPct.toFixed(1)}% {p.diffPct >= 0 ? '🔼' : '🔽'} desde tu precio de compra
+            </p>
+          ))}
+        </section>
+      )}
+
+      {/* Realized P&L by asset */}
+      <section className="section">
+        <h2 className="sectionTitle">P&amp;L realizado por activo</h2>
+        <div className="tableWrap">
+          <table className="table">
+            <thead>
+              <tr>
+                <th>Ticker</th>
+                <th>Clase</th>
+                <th>Realizado</th>
+                <th>ROI</th>
+                <th>Hold prom.</th>
+              </tr>
+            </thead>
+            <tbody>
+              {a.realizedRows.map((s) => (
+                <tr key={s.ticker}>
+                  <td className="ticker">{s.ticker}</td>
+                  <td className="opCell">{s.assetClass}</td>
+                  <td className={s.realizedCents >= 0n ? 'pos' : 'neg'}>{money(s.realizedCents)}</td>
+                  <td className={s.roiPct != null && s.roiPct >= 0 ? 'pos' : 'neg'}>{pct(s.roiPct)}</td>
+                  <td>{s.avgHoldingDays != null ? `${Math.round(s.avgHoldingDays)}d` : '—'}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      {/* Costs + liquidity */}
+      <section className="section">
+        <h2 className="sectionTitle">Costos y liquidez</h2>
+        <div className="cards">
+          <div className="card">
+            <span className="cardLabel">Costos totales</span>
+            <span className="cardValue">$ {a.costs.total.toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+            <span className="cardSub">{a.costs.pctSobreVolumen.toFixed(2)}% del volumen operado</span>
+          </div>
+          <div className="card">
+            <span className="cardLabel">Liquidez alta (estim.)</span>
+            <span className="cardValue">{a.liqAltaPct.toFixed(0)}%</span>
+            <span className="cardSub">convertible a cash &lt; 48h</span>
+          </div>
+        </div>
+        <p className="hint">
+          Comisiones $ {a.costs.comision.toLocaleString('es-AR', { maximumFractionDigits: 0 })} · Derechos $
+          {' '}{a.costs.derechos.toLocaleString('es-AR', { maximumFractionDigits: 0 })} · IVA $
+          {' '}{a.costs.iva.toLocaleString('es-AR', { maximumFractionDigits: 0 })}
+        </p>
+      </section>
+    </div>
+  );
+}
