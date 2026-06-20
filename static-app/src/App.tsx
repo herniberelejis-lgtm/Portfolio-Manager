@@ -77,19 +77,25 @@ export function App() {
 
   const view = useMemo(() => buildView(transactions, prices), [transactions, prices]);
 
-  // Seed price inputs for any newly-held ticker (default to avg cost so the
-  // portfolio starts at break-even until the user enters real prices).
+  // Seed the current price for any held ticker without one yet, defaulting to
+  // its average cost so the portfolio starts at break-even (market value = cost)
+  // until the user enters real prices. Seeded defaults are kept in memory only
+  // (not persisted) so they refresh as the average cost changes; explicit edits
+  // and synced prices are persisted via updatePrice / handleSyncPrices.
   useEffect(() => {
-    setPriceInputs((prev) => {
-      const next = { ...prev };
-      for (const p of view.positions) {
-        if (next[p.ticker] === undefined) {
-          const seed = prices[p.ticker] ?? p.avgCostCents;
-          next[p.ticker] = centsToPesos(seed).toString();
-        }
+    const missing = view.positions.filter((p) => prices[p.ticker] === undefined);
+    if (missing.length === 0) return;
+    const nextPrices = { ...prices };
+    const nextInputs = { ...priceInputs };
+    for (const p of missing) {
+      nextPrices[p.ticker] = p.avgCostCents;
+      if (nextInputs[p.ticker] === undefined) {
+        nextInputs[p.ticker] = centsToPesos(p.avgCostCents).toString();
       }
-      return next;
-    });
+    }
+    setPrices(nextPrices);
+    setPriceInputs(nextInputs);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [view.positions, prices]);
 
   function persist(txs: ParsedTransaction[]) {
