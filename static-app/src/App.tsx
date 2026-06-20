@@ -1,19 +1,15 @@
 import { useEffect, useMemo, useState } from 'react';
+import type { Session } from '@supabase/supabase-js';
+import { buildView, parseCsv, parseXlsx, syncPrices, type ParsedTransaction } from './portfolio';
+import { supabase, supabaseConfigured } from './supabaseClient';
 import {
-  buildView,
-  parseCsv,
-  parseXlsx,
-  syncPrices,
-  txKey,
-  type ParsedTransaction,
-} from './portfolio';
-import {
-  clearAll,
-  loadPrices,
-  loadTransactions,
-  savePrices,
-  saveTransactions,
-} from './storage';
+  deleteAllData,
+  fetchPrices,
+  fetchTransactions,
+  insertTransactions,
+  upsertPrices,
+} from './remoteStorage';
+import { Auth } from './Auth';
 import { Charts } from './Charts';
 
 function centsToPesos(cents: bigint): number {
@@ -63,25 +59,58 @@ function sampleTransactions(): ParsedTransaction[] {
 }
 
 export function App() {
+  const [session, setSession] = useState<Session | null>(null);
+  const [authReady, setAuthReady] = useState(false);
+
   const [transactions, setTransactions] = useState<ParsedTransaction[]>([]);
   const [prices, setPrices] = useState<Record<string, bigint>>({});
   const [priceInputs, setPriceInputs] = useState<Record<string, string>>({});
   const [errors, setErrors] = useState<{ row: number; message: string }[]>([]);
-  const [message, setMessage] = useState<string>('');
+  const [message, setMessage] = useState('');
   const [busy, setBusy] = useState(false);
+  const [loadingData, setLoadingData] = useState(false);
 
+  // Track the auth session.
   useEffect(() => {
-    setTransactions(loadTransactions());
-    setPrices(loadPrices());
+    if (!supabase) {
+      setAuthReady(true);
+      return;
+    }
+    supabase.auth.getSession().then(({ data }) => {
+      setSession(data.session);
+      setAuthReady(true);
+    });
+    const { data: sub } = supabase.auth.onAuthStateChange((_e, s) => setSession(s));
+    return () => sub.subscription.unsubscribe();
   }, []);
+
+  // Load this user's data whenever they log in.
+  useEffect(() => {
+    if (!session) {
+      setTransactions([]);
+      setPrices({});
+      setPriceInputs({});
+      return;
+    }
+    let cancelled = false;
+    setLoadingData(true);
+    Promise.all([fetchTransactions(), fetchPrices()])
+      .then(([txs, pr]) => {
+        if (cancelled) return;
+        setTransactions(txs);
+        setPrices(pr);
+      })
+      .catch((e) => !cancelled && setMessage(`Error al cargar tus datos: ${(e as Error).message}`))
+      .finally(() => !cancelled && setLoadingData(false));
+    return () => {
+      cancelled = true;
+    };
+  }, [session]);
 
   const view = useMemo(() => buildView(transactions, prices), [transactions, prices]);
 
-  // Seed the current price for any held ticker without one yet, defaulting to
-  // its average cost so the portfolio starts at break-even (market value = cost)
-  // until the user enters real prices. Seeded defaults are kept in memory only
-  // (not persisted) so they refresh as the average cost changes; explicit edits
-  // and synced prices are persisted via updatePrice / handleSyncPrices.
+  // Seed the current price for any held ticker without one yet (default to its
+  // average cost = break-even). Seeded defaults stay in memory only.
   useEffect(() => {
     const missing = view.positions.filter((p) => prices[p.ticker] === undefined);
     if (missing.length === 0) return;
@@ -98,16 +127,13 @@ export function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [view.positions, prices]);
 
-  function persist(txs: ParsedTransaction[]) {
-    setTransactions(txs);
-    saveTransactions(txs);
-  }
-
-  function mergeNew(incoming: ParsedTransaction[]) {
-    const existing = new Set(transactions.map(txKey));
-    const deduped = incoming.filter((t) => !existing.has(txKey(t)));
-    persist([...transactions, ...deduped]);
-    return { added: deduped.length, skipped: incoming.length - deduped.length };
+  async function addTransactions(incoming: ParsedTransaction[]): Promise<number> {
+    const added = await insertTransactions(incoming, transactions);
+    if (added > 0) {
+      const refreshed = await fetchTransactions();
+      setTransactions(refreshed);
+    }
+    return added;
   }
 
   async function handleFiles(files: FileList | null) {
@@ -116,7 +142,6 @@ export function App() {
     setErrors([]);
     const allErrors: { row: number; message: string }[] = [];
     let totalAdded = 0;
-    let totalSkipped = 0;
     try {
       for (const file of Array.from(files)) {
         const isXlsx = /\.xlsx$/i.test(file.name);
@@ -124,15 +149,10 @@ export function App() {
           ? await parseXlsx(await file.arrayBuffer())
           : parseCsv(await file.text());
         allErrors.push(...result.errors);
-        const { added, skipped } = mergeNew(result.transactions);
-        totalAdded += added;
-        totalSkipped += skipped;
+        totalAdded += await addTransactions(result.transactions);
       }
       setErrors(allErrors);
-      setMessage(
-        `Importadas ${totalAdded} transacciones nuevas` +
-          (totalSkipped ? `, ${totalSkipped} duplicadas omitidas.` : '.'),
-      );
+      setMessage(`Importadas ${totalAdded} transacciones nuevas (las duplicadas se omiten).`);
     } catch (e) {
       setMessage(`Error al importar: ${(e as Error).message}`);
     } finally {
@@ -140,13 +160,17 @@ export function App() {
     }
   }
 
-  function updatePrice(ticker: string, raw: string) {
+  async function updatePrice(ticker: string, raw: string) {
     setPriceInputs((prev) => ({ ...prev, [ticker]: raw }));
     const cents = pesosToCents(raw);
     if (cents === null) return;
     const next = { ...prices, [ticker]: cents };
     setPrices(next);
-    savePrices(next);
+    try {
+      await upsertPrices({ [ticker]: cents });
+    } catch (e) {
+      setMessage(`No se pudo guardar el precio: ${(e as Error).message}`);
+    }
   }
 
   async function handleSyncPrices() {
@@ -160,18 +184,18 @@ export function App() {
       } else {
         const next = { ...prices, ...fetched };
         setPrices(next);
-        savePrices(next);
         setPriceInputs((prev) => {
           const n = { ...prev };
           for (const [t, c] of Object.entries(fetched)) n[t] = centsToPesos(c).toString();
           return n;
         });
+        await upsertPrices(fetched);
         setMessage(`Precios actualizados para ${Object.keys(fetched).length} activo(s).`);
       }
     } catch (e) {
       setMessage(
-        'No se pudieron traer precios (probablemente bloqueo CORS del navegador). ' +
-          'Podés cargar los precios actuales a mano. Detalle: ' +
+        'No se pudieron traer precios (posible bloqueo CORS del navegador). ' +
+          'Podés cargarlos a mano. Detalle: ' +
           (e as Error).message,
       );
     } finally {
@@ -179,19 +203,59 @@ export function App() {
     }
   }
 
-  function loadSample() {
-    const { added } = mergeNew(sampleTransactions());
-    setMessage(`Cargado portafolio de ejemplo (${added} transacciones).`);
+  async function loadSample() {
+    setBusy(true);
+    try {
+      const added = await addTransactions(sampleTransactions());
+      setMessage(`Cargado portafolio de ejemplo (${added} transacciones).`);
+    } catch (e) {
+      setMessage(`Error: ${(e as Error).message}`);
+    } finally {
+      setBusy(false);
+    }
   }
 
-  function handleClear() {
-    if (!confirm('¿Borrar todos los datos guardados en este navegador?')) return;
-    clearAll();
-    setTransactions([]);
-    setPrices({});
-    setPriceInputs({});
-    setErrors([]);
-    setMessage('Datos borrados.');
+  async function handleClear() {
+    if (!confirm('¿Borrar todos tus datos de la cuenta? Esto no se puede deshacer.')) return;
+    setBusy(true);
+    try {
+      await deleteAllData();
+      setTransactions([]);
+      setPrices({});
+      setPriceInputs({});
+      setErrors([]);
+      setMessage('Datos borrados.');
+    } catch (e) {
+      setMessage(`Error al borrar: ${(e as Error).message}`);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function handleLogout() {
+    await supabase!.auth.signOut();
+  }
+
+  if (!supabaseConfigured) {
+    return (
+      <div className="authWrap">
+        <div className="authCard">
+          <h1>📊 Portfolio Manager</h1>
+          <p className="message">
+            Falta configurar la conexión con Supabase (URL y anon key) para habilitar las
+            cuentas. Avisá para terminar de cablearlo.
+          </p>
+        </div>
+      </div>
+    );
+  }
+
+  if (!authReady) {
+    return <div className="loading">Cargando…</div>;
+  }
+
+  if (!session) {
+    return <Auth />;
   }
 
   const hasData = transactions.length > 0;
@@ -199,10 +263,17 @@ export function App() {
   return (
     <div className="app">
       <header className="header">
-        <h1>📊 Portfolio Manager</h1>
+        <div className="headerTop">
+          <h1>📊 Portfolio Manager</h1>
+          <div className="userBox">
+            <span className="userEmail">{session.user.email}</span>
+            <button className="ghostBtn" onClick={handleLogout}>
+              Salir
+            </button>
+          </div>
+        </div>
         <p className="subtitle">
-          Seguimiento de cartera para brokers argentinos. Corre 100% en tu navegador —
-          tus datos no salen de tu equipo (se guardan en este navegador).
+          Tu cartera, sincronizada en tu cuenta. Solo vos podés ver estos datos.
         </p>
       </header>
 
@@ -247,6 +318,8 @@ export function App() {
           </details>
         )}
       </section>
+
+      {loadingData && <div className="loading">Cargando tus datos…</div>}
 
       {hasData && (
         <>
@@ -342,9 +415,7 @@ export function App() {
         </>
       )}
 
-      <footer className="footer">
-        Sin servidor · sin base de datos · tus datos quedan en este navegador.
-      </footer>
+      <footer className="footer">Datos sincronizados en tu cuenta · privados.</footer>
     </div>
   );
 }
