@@ -56,3 +56,19 @@ export function inflationAccum(series: InflPoint[], from: Date): number {
   }
   return (factor - 1) * 100;
 }
+
+/** BTC price in USD now and at the portfolio start date (CoinGecko, no key). */
+export async function fetchBtcUsd(startDate: Date): Promise<{ now: number; start: number }> {
+  const CG = 'https://api.coingecko.com/api/v3';
+  const dd = String(startDate.getDate()).padStart(2, '0');
+  const mm = String(startDate.getMonth() + 1).padStart(2, '0');
+  const yyyy = startDate.getFullYear();
+  const [nowR, startR] = await Promise.all([
+    fetch(`${CG}/simple/price?ids=bitcoin&vs_currencies=usd`).then((r) => r.json()),
+    fetch(`${CG}/coins/bitcoin/history?date=${dd}-${mm}-${yyyy}&localization=false`).then((r) => r.json()),
+  ]);
+  const now = Number(nowR?.bitcoin?.usd);
+  const start = Number(startR?.market_data?.current_price?.usd);
+  if (!now || !start) throw new Error('BTC sin datos');
+  return { now, start };
+}

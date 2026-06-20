@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { fetchCCL, fetchInflation, inflationAccum, latestValue, valueAtDate } from './benchmarks';
+import { fetchBtcUsd, fetchCCL, fetchInflation, inflationAccum, latestValue, valueAtDate } from './benchmarks';
 
 interface Props {
   startDate: Date | null;
@@ -12,6 +12,8 @@ interface Data {
   cclReturnPct: number;
   inflAccumPct: number;
   usdValue: number;
+  btcReturnPct?: number;
+  btcValue?: number;
 }
 
 function pctStr(n: number): string {
@@ -26,17 +28,20 @@ export function Benchmarks({ startDate, returnPct, currentValueCents }: Props) {
     if (!startDate) return;
     let cancelled = false;
     setState('loading');
-    Promise.all([fetchCCL(), fetchInflation()])
-      .then(([ccl, infl]) => {
+    Promise.all([fetchCCL(), fetchInflation(), fetchBtcUsd(startDate).catch(() => null)])
+      .then(([ccl, infl, btc]) => {
         if (cancelled) return;
         const cclNow = latestValue(ccl);
         const cclStart = valueAtDate(ccl, startDate);
         if (!cclNow || !cclStart) throw new Error('sin datos');
+        const usdValue = Number(currentValueCents) / 100 / cclNow;
         setData({
           cclNow,
           cclReturnPct: (cclNow / cclStart - 1) * 100,
           inflAccumPct: inflationAccum(infl, startDate),
-          usdValue: Number(currentValueCents) / 100 / cclNow,
+          usdValue,
+          btcReturnPct: btc ? (btc.now / btc.start - 1) * 100 : undefined,
+          btcValue: btc ? usdValue / btc.now : undefined,
         });
         setState('ok');
       })
@@ -89,6 +94,19 @@ export function Benchmarks({ startDate, returnPct, currentValueCents }: Props) {
                   : ''}
               </span>
             </div>
+            {data.btcReturnPct != null && (
+              <div className="card">
+                <span className="cardLabel">Bitcoin (período, USD)</span>
+                <span className={`cardValue ${data.btcReturnPct >= 0 ? 'pos' : 'neg'}`}>{pctStr(data.btcReturnPct)}</span>
+                <span className="cardSub">referencia en dólares</span>
+              </div>
+            )}
+            {data.btcValue != null && (
+              <div className="card">
+                <span className="cardLabel">Tu cartera en BTC</span>
+                <span className="cardValue">₿ {data.btcValue.toLocaleString('es-AR', { maximumFractionDigits: 4 })}</span>
+              </div>
+            )}
           </div>
           <p className="hint">
             Comparado desde tu primera operación. “Tu retorno” es la ganancia total sobre el aporte neto en el
