@@ -2,11 +2,14 @@ import { useMemo } from 'react';
 import type { ParsedTransaction } from './portfolio';
 import {
   arsCashBalanceCents,
+  behavior,
   byAssetClass,
   cashFlows,
   computeCosts,
+  currencyExposure,
   operationalQuality,
   perTicker,
+  realizedByYear,
   xirr,
   type Flow,
 } from './analytics';
@@ -96,10 +99,13 @@ export function Analisis({
     const liqAltaPct = totMv > 0n ? (Number(liqAlta) / Number(totMv)) * 100 : 0;
 
     const realizedRows = stats.filter((s) => s.realizedCents !== 0n).sort((x, y) => Number(y.realizedCents - x.realizedCents));
+    const beh = behavior(transactions);
+    const fiscal = realizedByYear(transactions);
+    const fx = currencyExposure(stats, prices);
 
     return {
       stats, costs, cf, oq, classes, currentValue, latent, realized, totalPnl, returnPct,
-      tir, conc, riskLevel, liqAltaPct, priceAlerts, realizedRows, held,
+      tir, conc, riskLevel, liqAltaPct, priceAlerts, realizedRows, held, beh, fiscal, fx,
     };
   }, [transactions, prices]);
 
@@ -176,6 +182,98 @@ export function Analisis({
             <span className="cardValue neg">{money(a.oq.avgLossCents)}</span>
           </div>
         </div>
+      </section>
+
+      {/* Behavior */}
+      <section className="section">
+        <h2 className="sectionTitle">Comportamiento</h2>
+        <div className="tableWrap">
+          <table className="table">
+            <thead>
+              <tr>
+                <th>Clase de activo</th>
+                <th>Win rate</th>
+                <th>Operaciones</th>
+                <th>Realizado</th>
+              </tr>
+            </thead>
+            <tbody>
+              {a.beh.byClass.map((c) => (
+                <tr key={c.assetClass}>
+                  <td className="opCell">{c.assetClass}</td>
+                  <td className={c.winRatePct >= 50 ? 'pos' : 'neg'}>{pct(c.winRatePct, 0)}</td>
+                  <td>{c.wins}/{c.total}</td>
+                  <td className={c.realizedCents >= 0n ? 'pos' : 'neg'}>{money(c.realizedCents)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+        <div className="cards" style={{ marginTop: 14 }}>
+          <div className="card">
+            <span className="cardLabel">Holding ganadoras</span>
+            <span className="cardValue">{a.beh.winHoldDays != null ? `${Math.round(a.beh.winHoldDays)}d` : '—'}</span>
+          </div>
+          <div className="card">
+            <span className="cardLabel">Holding perdedoras</span>
+            <span className="cardValue">{a.beh.lossHoldDays != null ? `${Math.round(a.beh.lossHoldDays)}d` : '—'}</span>
+          </div>
+          <div className="card">
+            <span className="cardLabel">Operaciones / mes</span>
+            <span className="cardValue">{a.beh.tradesPerMonth.toFixed(1)}</span>
+          </div>
+          <div className="card">
+            <span className="cardLabel">Exposición USD</span>
+            <span className="cardValue">{a.fx.usdPct.toFixed(0)}%</span>
+            <span className="cardSub">{a.fx.arsPct.toFixed(0)}% en pesos</span>
+          </div>
+        </div>
+        {a.beh.bestSale && a.beh.worstSale && (
+          <p className="hint">
+            Mejor operación: <span className="pos">{a.beh.bestSale.ticker} {money(a.beh.bestSale.realizedCents)}</span> ·
+            {' '}Peor: <span className="neg">{a.beh.worstSale.ticker} {money(a.beh.worstSale.realizedCents)}</span>
+          </p>
+        )}
+        {(() => {
+          const cedear = a.beh.byClass.find((c) => c.assetClass === 'CEDEAR');
+          const arg = a.beh.byClass.find((c) => c.assetClass === 'Acción ARG');
+          if (cedear && arg && cedear.realizedCents > 0n && arg.realizedCents < 0n) {
+            return (
+              <p className="message">
+                📌 Patrón detectado: tus <strong>CEDEARs</strong> ganan {pct(cedear.winRatePct, 0)} de las veces ({money(cedear.realizedCents)}),
+                mientras tus <strong>acciones argentinas</strong> ganan solo {pct(arg.winRatePct, 0)} ({money(arg.realizedCents)}).
+                Tu edge está claramente en los CEDEARs.
+              </p>
+            );
+          }
+          return null;
+        })()}
+      </section>
+
+      {/* Tax by year */}
+      <section className="section">
+        <h2 className="sectionTitle">Resumen fiscal por año</h2>
+        <div className="tableWrap">
+          <table className="table">
+            <thead>
+              <tr>
+                <th>Año</th>
+                <th>P&amp;L realizado</th>
+                <th>Dividendos</th>
+              </tr>
+            </thead>
+            <tbody>
+              {a.fiscal.map((y) => (
+                <tr key={y.year}>
+                  <td className="ticker">{y.year}</td>
+                  <td className={y.realizedCents >= 0n ? 'pos' : 'neg'}>{money(y.realizedCents)}</td>
+                  <td>{money(y.dividendsCents)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+        <p className="hint">P&amp;L realizado por año calendario (ventas cerradas) — útil para estimar Ganancias.</p>
       </section>
 
       {/* Concentration */}

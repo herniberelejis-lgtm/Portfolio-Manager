@@ -56,7 +56,7 @@ export function computeCosts(txs: ParsedTransaction[]): CostSummary {
   return { comision, derechos, iva, otros, total, volumenOperado: volumen, pctSobreVolumen: volumen ? (total / volumen) * 100 : 0 };
 }
 
-export interface Sale { ticker: string; date: Date; realizedCents: bigint; costOfSoldCents: bigint; }
+export interface Sale { ticker: string; date: Date; realizedCents: bigint; costOfSoldCents: bigint; holdingDays: number | null; }
 
 export interface TickerStats {
   ticker: string;
@@ -115,8 +115,9 @@ export function perTicker(transactions: ParsedTransaction[]): TickerStats[] {
         costOfSold += cos;
         costCents -= cos;
         qty -= t.quantity;
-        sales.push({ ticker, date: t.date, realizedCents: rea, costOfSoldCents: cos });
-        if (wAcqMs) holdDays.push((t.date.getTime() - wAcqMs) / 864e5);
+        const hd = wAcqMs ? (t.date.getTime() - wAcqMs) / 864e5 : null;
+        sales.push({ ticker, date: t.date, realizedCents: rea, costOfSoldCents: cos, holdingDays: hd });
+        if (hd != null) holdDays.push(hd);
       }
     }
 
@@ -208,6 +209,98 @@ export function arsCashBalanceCents(txs: ParsedTransaction[]): bigint {
 }
 
 export interface Flow { date: Date; amount: number; }
+
+export interface YearTax { year: number; realizedCents: bigint; dividendsCents: bigint }
+
+/** Realized P&L and dividends per calendar year (for tax estimation). */
+export function realizedByYear(transactions: ParsedTransaction[]): YearTax[] {
+  const sales = perTicker(transactions).flatMap((s) => s.sales);
+  const map = new Map<number, { r: bigint; d: bigint }>();
+  for (const s of sales) {
+    const y = s.date.getFullYear();
+    const e = map.get(y) ?? { r: 0n, d: 0n };
+    e.r += s.realizedCents;
+    map.set(y, e);
+  }
+  for (const t of transactions) {
+    if (t.type !== 'dividend') continue;
+    const y = t.date.getFullYear();
+    const e = map.get(y) ?? { r: 0n, d: 0n };
+    e.d += t.amountCents;
+    map.set(y, e);
+  }
+  return Array.from(map.entries())
+    .map(([year, e]) => ({ year, realizedCents: e.r, dividendsCents: e.d }))
+    .sort((a, b) => a.year - b.year);
+}
+
+export interface Behavior {
+  winHoldDays: number | null;
+  lossHoldDays: number | null;
+  byClass: { assetClass: AssetClass; wins: number; total: number; winRatePct: number; realizedCents: bigint }[];
+  tradesPerMonth: number;
+  bestSale: { ticker: string; date: Date; realizedCents: bigint } | null;
+  worstSale: { ticker: string; date: Date; realizedCents: bigint } | null;
+}
+
+/** Behavioral analysis: disposition effect (selling winners fast / holding
+ *  losers), win rate by asset class, trading frequency, best/worst trades. */
+export function behavior(transactions: ParsedTransaction[]): Behavior {
+  const stats = perTicker(transactions);
+  const classOf = new Map(stats.map((s) => [s.ticker, s.assetClass]));
+  const sales = stats.flatMap((s) => s.sales);
+
+  const winHolds = sales.filter((s) => s.realizedCents > 0n && s.holdingDays != null).map((s) => s.holdingDays!);
+  const lossHolds = sales.filter((s) => s.realizedCents < 0n && s.holdingDays != null).map((s) => s.holdingDays!);
+  const avg = (a: number[]) => (a.length ? a.reduce((s, x) => s + x, 0) / a.length : null);
+
+  const cmap = new Map<AssetClass, { wins: number; total: number; r: bigint }>();
+  for (const s of sales) {
+    const cls = classOf.get(s.ticker) ?? 'Otro';
+    const e = cmap.get(cls) ?? { wins: 0, total: 0, r: 0n };
+    e.total += 1;
+    if (s.realizedCents > 0n) e.wins += 1;
+    e.r += s.realizedCents;
+    cmap.set(cls, e);
+  }
+  const byClass = Array.from(cmap.entries())
+    .map(([assetClass, e]) => ({ assetClass, wins: e.wins, total: e.total, winRatePct: e.total ? (e.wins / e.total) * 100 : 0, realizedCents: e.r }))
+    .sort((a, b) => Number(b.realizedCents - a.realizedCents));
+
+  const trades = transactions.filter((t) => t.type === 'buy' || t.type === 'sell');
+  let tradesPerMonth = 0;
+  if (trades.length) {
+    const dates = trades.map((t) => t.date.getTime());
+    const months = Math.max(1, (Math.max(...dates) - Math.min(...dates)) / (30.44 * 864e5));
+    tradesPerMonth = trades.length / months;
+  }
+
+  const sorted = [...sales].sort((a, b) => Number(b.realizedCents - a.realizedCents));
+  const pick = (s?: Sale) => (s ? { ticker: s.ticker, date: s.date, realizedCents: s.realizedCents } : null);
+
+  return {
+    winHoldDays: avg(winHolds),
+    lossHoldDays: avg(lossHolds),
+    byClass,
+    tradesPerMonth,
+    bestSale: pick(sorted[0]),
+    worstSale: pick(sorted[sorted.length - 1]),
+  };
+}
+
+/** Share of held market value tracking USD (CEDEARs + USD positions) vs ARS. */
+export function currencyExposure(stats: TickerStats[], prices: Record<string, bigint>): { usdPct: number; arsPct: number } {
+  let usd = 0n;
+  let total = 0n;
+  for (const s of stats) {
+    if (s.heldQty <= 0) continue;
+    const mv = BigInt(Math.round(s.heldQty)) * (prices[s.ticker] ?? s.avgCostCents);
+    total += mv;
+    if (s.assetClass === 'CEDEAR' || s.currency === 'USD') usd += mv;
+  }
+  const usdPct = total > 0n ? (Number(usd) / Number(total)) * 100 : 0;
+  return { usdPct, arsPct: 100 - usdPct };
+}
 
 /** Money-weighted return (XIRR) via bisection. amount sign: money the investor
  *  receives is positive, money paid in is negative. Returns an annual rate. */

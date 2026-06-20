@@ -37,11 +37,34 @@ export function Movimientos({ transactions }: { transactions: ParsedTransaction[
     return filter === 'all' ? sorted : sorted.filter((t) => t.type === filter);
   }, [transactions, filter]);
 
+  function exportCsv() {
+    const header = ['Fecha', 'Operacion', 'Ticker', 'Cantidad', 'Precio', 'Moneda', 'Monto'];
+    const lines = rows.map((t) =>
+      [
+        t.date.toISOString().slice(0, 10),
+        opLabel(t).replace(/[,;]/g, ' '),
+        t.ticker ?? '',
+        t.quantity ?? '',
+        t.price ?? '',
+        t.currency,
+        (Number(t.amountCents) / 100).toFixed(2),
+      ].join(','),
+    );
+    const csv = [header.join(','), ...lines].join('\n');
+    const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' }));
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `movimientos_${new Date().toISOString().slice(0, 10)}.csv`;
+    link.click();
+    URL.revokeObjectURL(url);
+  }
+
   return (
     <section className="section">
       <div className="tableHeader">
         <h2 className="sectionTitle">Movimientos ({rows.length})</h2>
         <div className="filterRow">
+          <button className="chip" onClick={exportCsv}>⬇ CSV</button>
           {FILTERS.map((f) => (
             <button
               key={f.key}
