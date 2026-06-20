@@ -56,7 +56,9 @@ function toCents(value: string): bigint {
 }
 
 function parseDdMmYyyy(value: string): Date {
-  const [day, month, year] = value.trim().split('-').map(Number);
+  // Cocos exports dates in two formats depending on the report: zero-padded
+  // dash ("13-01-2026") and non-padded slash ("13/1/2026"). Accept both.
+  const [day, month, year] = value.trim().split(/[-/]/).map(Number);
   if (!day || !month || !year || Number.isNaN(day) || Number.isNaN(month) || Number.isNaN(year)) {
     throw new Error(`unparseable date "${value}"`);
   }

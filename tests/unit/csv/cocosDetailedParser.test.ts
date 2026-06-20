@@ -32,6 +32,17 @@ describe('cocosDetailedParser', () => {
     expect(cocosDetailedParser.detect(['Fecha', 'Tipo'])).toBe(false);
   });
 
+  it('accepts both dash and non-padded slash date formats', () => {
+    const buy = (fecha: string) =>
+      row({ fechaEjecucion: fecha, tipoOperacion: 'Compra', instrumento: 'GRUPO GALICIA (GGAL)', moneda: 'ARS', cantidad: '10', precio: '100', total: '-1.000' });
+    const csv = `${HEADER}\n${buy('13-01-2026')}\n${buy('5/3/2026')}`;
+    const { transactions, errors } = cocosDetailedParser.parse(csv);
+    expect(errors).toEqual([]);
+    expect(transactions[0].date.getFullYear()).toBe(2026);
+    expect(transactions[1].date.getMonth()).toBe(2); // March (0-indexed)
+    expect(transactions[1].date.getDate()).toBe(5);
+  });
+
   it('parses a buy row, extracting the ticker from instrumento', () => {
     const csv = [
       HEADER,
