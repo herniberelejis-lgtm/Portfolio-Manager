@@ -13,6 +13,7 @@ import {
   xirr,
   type Flow,
 } from './analytics';
+import { Benchmarks } from './Benchmarks';
 
 function pesos(cents: bigint): number {
   return Number(cents) / 100;
@@ -102,10 +103,13 @@ export function Analisis({
     const beh = behavior(transactions);
     const fiscal = realizedByYear(transactions);
     const fx = currencyExposure(stats, prices);
+    const startDate = transactions.length
+      ? new Date(Math.min(...transactions.map((t) => t.date.getTime())))
+      : null;
 
     return {
       stats, costs, cf, oq, classes, currentValue, latent, realized, totalPnl, returnPct,
-      tir, conc, riskLevel, liqAltaPct, priceAlerts, realizedRows, held, beh, fiscal, fx,
+      tir, conc, riskLevel, liqAltaPct, priceAlerts, realizedRows, held, beh, fiscal, fx, startDate,
     };
   }, [transactions, prices]);
 
@@ -135,6 +139,9 @@ export function Analisis({
           </div>
         </div>
       </section>
+
+      {/* Benchmarks (USD CCL + inflation) */}
+      <Benchmarks startDate={a.startDate} returnPct={a.returnPct} currentValueCents={a.currentValue} />
 
       {/* Return breakdown */}
       <section className="section">
