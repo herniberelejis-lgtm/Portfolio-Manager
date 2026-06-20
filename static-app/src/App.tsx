@@ -20,6 +20,7 @@ import { Auth } from './Auth';
 import { Charts } from './Charts';
 import { Movimientos } from './Movimientos';
 import { Analisis } from './Analisis';
+import { Tutorial } from './Tutorial';
 
 function centsToPesos(cents: bigint): number {
   return Number(cents) / 100;
@@ -79,6 +80,7 @@ export function App() {
   const [busy, setBusy] = useState(false);
   const [loadingData, setLoadingData] = useState(false);
   const [tab, setTab] = useState<'resumen' | 'analisis' | 'movimientos'>('resumen');
+  const [showTutorial, setShowTutorial] = useState(false);
   const [pricesUpdatedAt, setPricesUpdatedAt] = useState<Date | null>(null);
 
   // Track the auth session.
@@ -302,10 +304,14 @@ export function App() {
 
   return (
     <div className="app">
+      {showTutorial && <Tutorial onClose={() => setShowTutorial(false)} />}
       <header className="header">
         <div className="headerTop">
           <h1>📊 Portfolio Manager</h1>
           <div className="userBox">
+            <button className="ghostBtn" onClick={() => setShowTutorial(true)}>
+              ❓ Cómo se usa
+            </button>
             <span className="userEmail">{session.user.email}</span>
             <button className="ghostBtn" onClick={handleLogout}>
               Salir
