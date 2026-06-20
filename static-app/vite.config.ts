@@ -1,6 +1,19 @@
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 import { resolve } from 'path';
+import { copyFileSync } from 'fs';
+
+// Emit a 404.html identical to index.html so GitHub Pages serves the SPA for
+// any deep link under the site (e.g. auth redirects with a path/hash).
+function spaFallback() {
+  return {
+    name: 'spa-404',
+    closeBundle() {
+      const dir = resolve(__dirname, '../docs');
+      copyFileSync(resolve(dir, 'index.html'), resolve(dir, '404.html'));
+    },
+  };
+}
 
 // Browser-only build of Portfolio Manager, published to GitHub Pages.
 // Reuses the tested CSV/XLSX parsers and the P&L engine from ../src/lib,
@@ -9,7 +22,7 @@ export default defineConfig({
   root: __dirname,
   // GitHub Pages serves a project site under /<repo>/.
   base: '/Portfolio-Manager/',
-  plugins: [react()],
+  plugins: [react(), spaFallback()],
   define: {
     // The reused data912 client reads this; in the browser there is no
     // process.env, so inline it as a literal at build time.
