@@ -1,6 +1,13 @@
 import { useEffect, useMemo, useState } from 'react';
 import type { Session } from '@supabase/supabase-js';
-import { buildView, parseCsv, parseXlsx, syncPrices, type ParsedTransaction } from './portfolio';
+import {
+  buildView,
+  heldTickers,
+  parseCsv,
+  parseXlsx,
+  syncPrices,
+  type ParsedTransaction,
+} from './portfolio';
 import { supabase, supabaseConfigured } from './supabaseClient';
 import {
   deleteAllData,
@@ -11,6 +18,7 @@ import {
 } from './remoteStorage';
 import { Auth } from './Auth';
 import { Charts } from './Charts';
+import { Movimientos } from './Movimientos';
 
 function centsToPesos(cents: bigint): number {
   return Number(cents) / 100;
@@ -69,6 +77,8 @@ export function App() {
   const [message, setMessage] = useState('');
   const [busy, setBusy] = useState(false);
   const [loadingData, setLoadingData] = useState(false);
+  const [tab, setTab] = useState<'resumen' | 'movimientos'>('resumen');
+  const [pricesUpdatedAt, setPricesUpdatedAt] = useState<Date | null>(null);
 
   // Track the auth session.
   useEffect(() => {
@@ -127,6 +137,33 @@ export function App() {
     setPriceInputs(nextInputs);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [view.positions, prices]);
+
+  // Auto-update current prices from data912 whenever the holdings load or
+  // change. Best-effort: if the browser blocks the request (CORS) we silently
+  // keep the seeded average-cost prices and the user can still edit by hand.
+  useEffect(() => {
+    if (!session || transactions.length === 0) return;
+    const tickers = heldTickers(transactions);
+    if (tickers.length === 0) return;
+    let cancelled = false;
+    syncPrices(tickers)
+      .then((fetched) => {
+        if (cancelled || Object.keys(fetched).length === 0) return;
+        setPrices((prev) => ({ ...prev, ...fetched }));
+        setPriceInputs((prev) => {
+          const n = { ...prev };
+          for (const [t, c] of Object.entries(fetched)) n[t] = centsToPesos(c).toString();
+          return n;
+        });
+        setPricesUpdatedAt(new Date());
+        upsertPrices(fetched).catch(() => {});
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [session, transactions]);
 
   async function addTransactions(incoming: ParsedTransaction[]): Promise<number> {
     const added = await insertTransactions(incoming, transactions);
@@ -191,6 +228,7 @@ export function App() {
           return n;
         });
         await upsertPrices(fetched);
+        setPricesUpdatedAt(new Date());
         setMessage(`Precios actualizados para ${Object.keys(fetched).length} activo(s).`);
       }
     } catch (e) {
@@ -324,6 +362,25 @@ export function App() {
 
       {hasData && (
         <>
+          <div className="tabs">
+            <button
+              className={`tab ${tab === 'resumen' ? 'tabActive' : ''}`}
+              onClick={() => setTab('resumen')}
+            >
+              Resumen
+            </button>
+            <button
+              className={`tab ${tab === 'movimientos' ? 'tabActive' : ''}`}
+              onClick={() => setTab('movimientos')}
+            >
+              Movimientos
+            </button>
+          </div>
+
+          {tab === 'movimientos' ? (
+            <Movimientos transactions={transactions} />
+          ) : (
+          <>
           <section className="section">
             <div className="cards">
               <div className="card">
@@ -348,9 +405,19 @@ export function App() {
           <section className="section">
             <div className="tableHeader">
               <h2 className="sectionTitle">Tenencias</h2>
-              <button className="ghostBtn" onClick={handleSyncPrices} disabled={busy}>
-                Sincronizar precios (data912)
-              </button>
+              <div className="priceSync">
+                {pricesUpdatedAt && (
+                  <span className="hint">
+                    Precios al {pricesUpdatedAt.toLocaleTimeString('es-AR', {
+                      hour: '2-digit',
+                      minute: '2-digit',
+                    })}
+                  </span>
+                )}
+                <button className="ghostBtn" onClick={handleSyncPrices} disabled={busy}>
+                  Actualizar precios
+                </button>
+              </div>
             </div>
             <div className="tableWrap">
               <table className="table">
@@ -413,6 +480,8 @@ export function App() {
               cumulativeRealizedPnl: centsToPesos(h.cumulativeRealizedPnlCents),
             }))}
           />
+          </>
+          )}
         </>
       )}
 

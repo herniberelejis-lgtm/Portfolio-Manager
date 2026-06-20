@@ -74,6 +74,34 @@ export function txKey(tx: ParsedTransaction): string {
   ].join('|');
 }
 
+// MEP dollar operations (a bond bought/sold purely to convert ARS<->USD) and
+// money-market fund (FCI) subscriptions/redemptions are parsed as buy/sell, but
+// they are not real equity positions — counting them creates a phantom holding
+// and a meaningless mixed-currency P&L. Detect them by the original operation
+// label so they're kept in the movements list but excluded from positions.
+const EXCLUDED_OP = /\bmep\b|fci/i;
+export function isExcludedFromPositions(tx: ParsedTransaction): boolean {
+  const op = tx.rawRow?.tipoOperacion;
+  return typeof op === 'string' && EXCLUDED_OP.test(op);
+}
+
+const TYPE_LABEL: Record<ParsedTransaction['type'], string> = {
+  buy: 'Compra',
+  sell: 'Venta',
+  deposit: 'Ingreso',
+  withdrawal: 'Egreso',
+  dividend: 'Dividendo',
+  fee: 'Comisión',
+};
+
+/** Human label for a movement: the broker's original operation name when we
+ *  have it, otherwise a friendly label for the normalized type. */
+export function opLabel(tx: ParsedTransaction): string {
+  const op = tx.rawRow?.tipoOperacion;
+  if (typeof op === 'string' && op.trim()) return op.trim();
+  return TYPE_LABEL[tx.type] ?? tx.type;
+}
+
 /** Aggregate in-memory transactions into a portfolio view, mirroring the
  *  server's buildPortfolioView (weighted-average cost, realized/unrealized
  *  P&L, holdings split and an invested-cost timeline). */
@@ -85,6 +113,7 @@ export function buildView(
 
   for (const tx of transactions) {
     if (!tx.ticker) continue; // deposits / withdrawals / fees have no asset
+    if (isExcludedFromPositions(tx)) continue; // MEP / FCI currency moves
     const entry = byTicker.get(tx.ticker) ?? { ticker: tx.ticker, currency: tx.currency, txs: [] };
     entry.txs.push({
       type: tx.type,
@@ -119,14 +148,14 @@ export function buildView(
 
   const held = positions.filter((p) => p.quantity > 0);
 
-  const totals = held.reduce(
-    (acc, p) => ({
-      marketValueCents: acc.marketValueCents + p.marketValueCents,
-      unrealizedPnlCents: acc.unrealizedPnlCents + p.unrealizedPnlCents,
-      realizedPnlCents: acc.realizedPnlCents + p.realizedPnlCents,
-    }),
-    { marketValueCents: 0n, unrealizedPnlCents: 0n, realizedPnlCents: 0n },
-  );
+  // Market value and unrealized P&L only apply to what's still held; realized
+  // P&L must include closed positions too (a fully-sold winner/loser still
+  // counts), so it sums over every ticker, not just the held ones.
+  const totals = {
+    marketValueCents: held.reduce((s, p) => s + p.marketValueCents, 0n),
+    unrealizedPnlCents: held.reduce((s, p) => s + p.unrealizedPnlCents, 0n),
+    realizedPnlCents: positions.reduce((s, p) => s + p.realizedPnlCents, 0n),
+  };
 
   const sortedPositions = held
     .map((p) => ({
