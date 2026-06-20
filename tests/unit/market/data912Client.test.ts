@@ -24,9 +24,28 @@ describe('fetchLivePrices', () => {
     ]);
   });
 
-  it('throws a descriptive error when the API call fails', async () => {
+  it('returns no prices (gracefully) when the feeds are unavailable', async () => {
     (global.fetch as any).mockResolvedValue({ ok: false, status: 503 });
 
-    await expect(fetchLivePrices(['GGAL'])).rejects.toThrow(/data912.*503/i);
+    await expect(fetchLivePrices(['GGAL'])).resolves.toEqual([]);
+  });
+
+  it('merges quotes across feeds (e.g. a stock and a CEDEAR) and de-dups', async () => {
+    (global.fetch as any).mockImplementation((url: string) =>
+      Promise.resolve({
+        ok: true,
+        json: async () =>
+          url.includes('arg_cedears')
+            ? [{ symbol: 'JPM', c: 31570 }]
+            : url.includes('arg_stocks')
+              ? [{ symbol: 'CELU', c: 292 }]
+              : [],
+      }),
+    );
+
+    const prices = await fetchLivePrices(['CELU', 'JPM']);
+
+    expect(prices).toContainEqual({ ticker: 'CELU', priceCents: 29200n, currency: 'ARS' });
+    expect(prices).toContainEqual({ ticker: 'JPM', priceCents: 3157000n, currency: 'ARS' });
   });
 });

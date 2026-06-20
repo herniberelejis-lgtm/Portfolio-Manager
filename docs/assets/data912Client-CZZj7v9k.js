@@ -1,1 +1,0 @@
-async function e(e){let t=await fetch(`https://data912.com/live/arg_stocks?symbols=${e.join(`,`)}`);if(!t.ok)throw Error(`data912 request failed with status ${t.status}`);let n=await t.json(),r=new Set(e);return n.filter(e=>r.has(e.symbol)).map(e=>({ticker:e.symbol,priceCents:BigInt(Math.round(e.c*100)),currency:`ARS`}))}export{e as fetchLivePrices};
