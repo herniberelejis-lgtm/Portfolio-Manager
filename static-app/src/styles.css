@@ -576,6 +576,7 @@ body {
 .ovItem {
   display: flex;
   justify-content: space-between;
+  flex-wrap: wrap;
   padding: 9px 0;
   border-bottom: 1px solid var(--border);
   font-size: 0.9rem;
@@ -583,6 +584,26 @@ body {
 
 .ovLabel {
   color: var(--muted);
+}
+
+.infoBtn {
+  background: none;
+  border: none;
+  color: var(--accent);
+  cursor: pointer;
+  font-size: 0.85rem;
+  padding: 0 0 0 5px;
+}
+
+.ovInfo {
+  flex-basis: 100%;
+  color: var(--muted);
+  font-size: 0.82rem;
+  margin-top: 6px;
+  line-height: 1.45;
+  background: var(--bg);
+  padding: 8px 10px;
+  border-radius: 8px;
 }
 
 .ovVal {

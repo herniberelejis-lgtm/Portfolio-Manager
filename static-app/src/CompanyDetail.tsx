@@ -25,14 +25,41 @@ function cap(v?: number): string {
   return v >= 1000 ? `US$ ${(v / 1000).toFixed(1)}B` : `US$ ${v.toFixed(0)}M`;
 }
 
-function Row({ label, value, cls }: { label: string; value: string; cls?: string }) {
+function Row({ label, value, cls, info }: { label: string; value: string; cls?: string; info?: string }) {
+  const [open, setOpen] = useState(false);
   return (
     <div className="ovItem">
-      <span className="ovLabel">{label}</span>
+      <span className="ovLabel">
+        {label}
+        {info && (
+          <button className="infoBtn" onClick={() => setOpen((o) => !o)} aria-label="Qué significa">
+            ⓘ
+          </button>
+        )}
+      </span>
       <span className={`ovVal ${cls ?? ''}`}>{value}</span>
+      {open && info && <div className="ovInfo">{info}</div>}
     </div>
   );
 }
+
+const INFO = {
+  range52: 'Precio mínimo y máximo del último año. Ayuda a ver si está caro o barato respecto a su rango reciente.',
+  fromHigh: 'Cuánto está por debajo de su máximo de 52 semanas. Muy negativo puede ser oportunidad… o que algo anda mal.',
+  year: 'Cuánto subió o bajó el precio en el último año.',
+  cap: 'Valor total de la empresa en bolsa (precio × acciones). >US$10B = "large cap", <US$2B = "small cap".',
+  pe: 'P/E (PER) = Precio ÷ Ganancia por acción. Cuánto pagás por cada $1 de ganancia anual. Promedio histórico del S&P 500: ~15-20. Más alto = más caro o más expectativa de crecimiento.',
+  peg: 'P/E ajustado por el crecimiento de las ganancias. Menos de 1 suele indicar "barato para lo que crece"; más de 2, caro. Referencia: ~1.',
+  pb: 'P/B = Precio ÷ Valor libro (patrimonio contable). ~1-3 es típico; bancos suelen operar por debajo de 1,5.',
+  ps: 'P/S = Precio ÷ Ventas. Útil para empresas que aún no dan ganancias. Menos de 2 es bajo; más de 10 es alto (común en tecnología).',
+  eps: 'BPA (EPS) = Ganancia por acción de los últimos 12 meses. Cuánto ganó la empresa por cada acción.',
+  beta: 'Sensibilidad respecto al mercado. 1 = se mueve igual que el índice; >1 = más volátil/agresiva; <1 = más defensiva.',
+  margin: 'Margen neto = qué % de las ventas queda como ganancia. >10% es bueno; >20% excelente.',
+  roe: 'ROE = rentabilidad sobre el patrimonio. Cuánto genera la empresa por cada $1 de los accionistas. >15% suele ser bueno.',
+  growth: 'Crecimiento de los ingresos (ventas) respecto al año anterior.',
+  div: 'Rendimiento por dividendos: el dividendo anual como % del precio. Promedio del S&P 500: ~1,5-2%.',
+  prev: 'Precio al que cerró la acción el día hábil anterior.',
+};
 
 function Consensus({ rec }: { rec: NonNullable<Analysis['rec']> }) {
   const buy = rec.strongBuy + rec.buy;
@@ -182,21 +209,21 @@ export function CompanyDetail({ ticker }: { ticker: string }) {
         <>
           <span className="ovHead">Resumen</span>
           <div className="ovGrid">
-            <Row label="Rango 52 sem." value={a.low52 != null && a.high52 != null ? `${usd(a.low52)} – ${usd(a.high52)}` : '—'} />
-            <Row label="Desde el máximo" value={pct(a.distFromHighPct)} cls={(a.distFromHighPct ?? 0) < 0 ? 'neg' : 'pos'} />
-            <Row label="Variación 1 año" value={pct(a.yearReturnPct)} cls={(a.yearReturnPct ?? 0) >= 0 ? 'pos' : 'neg'} />
-            <Row label="Cap. de mercado" value={cap(a.marketCap)} />
-            <Row label="P/E (PER)" value={n(a.pe, 1)} />
-            <Row label="PEG" value={n(a.peg, 2)} />
-            <Row label="P/B" value={n(a.pb, 1)} />
-            <Row label="P/S" value={n(a.ps, 1)} />
-            <Row label="BPA (EPS)" value={usd(a.eps)} />
-            <Row label="Beta" value={n(a.beta, 2)} />
-            <Row label="Margen neto" value={pct(a.netMargin)} />
-            <Row label="ROE" value={pct(a.roe)} />
-            <Row label="Crec. ingresos" value={pct(a.revGrowth)} />
-            <Row label="Div. yield" value={pct(a.divYield)} />
-            <Row label="Cierre ant." value={usd(a.prevClose)} />
+            <Row label="Rango 52 sem." value={a.low52 != null && a.high52 != null ? `${usd(a.low52)} – ${usd(a.high52)}` : '—'} info={INFO.range52} />
+            <Row label="Desde el máximo" value={pct(a.distFromHighPct)} cls={(a.distFromHighPct ?? 0) < 0 ? 'neg' : 'pos'} info={INFO.fromHigh} />
+            <Row label="Variación 1 año" value={pct(a.yearReturnPct)} cls={(a.yearReturnPct ?? 0) >= 0 ? 'pos' : 'neg'} info={INFO.year} />
+            <Row label="Cap. de mercado" value={cap(a.marketCap)} info={INFO.cap} />
+            <Row label="P/E (PER)" value={n(a.pe, 1)} info={INFO.pe} />
+            <Row label="PEG" value={n(a.peg, 2)} info={INFO.peg} />
+            <Row label="P/B" value={n(a.pb, 1)} info={INFO.pb} />
+            <Row label="P/S" value={n(a.ps, 1)} info={INFO.ps} />
+            <Row label="BPA (EPS)" value={usd(a.eps)} info={INFO.eps} />
+            <Row label="Beta" value={n(a.beta, 2)} info={INFO.beta} />
+            <Row label="Margen neto" value={pct(a.netMargin)} info={INFO.margin} />
+            <Row label="ROE" value={pct(a.roe)} info={INFO.roe} />
+            <Row label="Crec. ingresos" value={pct(a.revGrowth)} info={INFO.growth} />
+            <Row label="Div. yield" value={pct(a.divYield)} info={INFO.div} />
+            <Row label="Cierre ant." value={usd(a.prevClose)} info={INFO.prev} />
           </div>
 
           {a.rec && <Consensus rec={a.rec} />}
