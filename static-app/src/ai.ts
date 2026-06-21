@@ -3,8 +3,8 @@
 // already used for the Finnhub/Twelve Data keys in this app: the key is
 // public, but it only ever reads/writes the user's own portfolio numbers
 // that we send as context, nothing sensitive lives server-side anyway.
-const GEMINI_API_KEY = 'PASTE_YOUR_FREE_GEMINI_API_KEY_HERE';
-const GEMINI_URL = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent';
+const GEMINI_API_KEY = 'PASTE_YOUR_FREE_GEMINI_KEY_HERE';
+const GEMINI_URL = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent';
 
 export const aiConfigured = GEMINI_API_KEY.length > 10 && !GEMINI_API_KEY.startsWith('PASTE_');
 
@@ -32,7 +32,10 @@ export async function askPortfolioAI(
   const res = await fetch(`${GEMINI_URL}?key=${GEMINI_API_KEY}`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ contents, generationConfig: { temperature: 0.3, maxOutputTokens: 500 } }),
+    body: JSON.stringify({
+      contents,
+      generationConfig: { temperature: 0.3, maxOutputTokens: 500, thinkingConfig: { thinkingBudget: 0 } },
+    }),
   });
   if (!res.ok) {
     const body = await res.text().catch(() => '');
