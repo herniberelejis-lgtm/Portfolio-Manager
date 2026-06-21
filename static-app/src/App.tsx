@@ -18,7 +18,7 @@ import {
 } from './remoteStorage';
 import { noLivePriceTickers } from './analytics';
 import { Auth } from './Auth';
-import { Charts } from './Charts';
+import { ChartsTop, ChartsBottom } from './Charts';
 import { Movimientos } from './Movimientos';
 import { Analisis } from './Analisis';
 import { CompanyDetail } from './CompanyDetail';
@@ -427,6 +427,21 @@ export function App() {
             />
           ) : (
           <>
+          <ChartsTop
+            positions={view.positions.map((p) => ({
+              ticker: p.ticker,
+              marketValue: centsToPesos(p.marketValueCents),
+              unrealizedPnl: centsToPesos(p.unrealizedPnlCents),
+              realizedPnl: centsToPesos(p.realizedPnlCents),
+              pctOfPortfolio: p.pctOfPortfolio,
+            }))}
+            history={view.history.map((h) => ({
+              date: h.date.toISOString(),
+              investedCost: centsToPesos(h.investedCostCents),
+              cumulativeRealizedPnl: centsToPesos(h.cumulativeRealizedPnlCents),
+            }))}
+          />
+
           <section className="section">
             <div className="cards">
               <div className="card">
@@ -533,7 +548,8 @@ export function App() {
             </p>
           </section>
 
-          <Charts
+          <ChartsBottom
+            riskTickers={view.positions.map((p) => p.ticker).filter((t) => !noLivePrice.has(t))}
             positions={view.positions.map((p) => ({
               ticker: p.ticker,
               marketValue: centsToPesos(p.marketValueCents),
