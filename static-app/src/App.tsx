@@ -23,6 +23,7 @@ import { Movimientos } from './Movimientos';
 import { Analisis } from './Analisis';
 import { Empresas } from './Empresas';
 import { CompanyDetail } from './CompanyDetail';
+import { Riesgo } from './Riesgo';
 import { Tutorial } from './Tutorial';
 
 function centsToPesos(cents: bigint): number {
@@ -82,7 +83,7 @@ export function App() {
   const [message, setMessage] = useState('');
   const [busy, setBusy] = useState(false);
   const [loadingData, setLoadingData] = useState(false);
-  const [tab, setTab] = useState<'resumen' | 'analisis' | 'empresas' | 'movimientos'>('resumen');
+  const [tab, setTab] = useState<'resumen' | 'analisis' | 'riesgo' | 'empresas' | 'movimientos'>('resumen');
   const [expandedTicker, setExpandedTicker] = useState<string | null>(null);
   const [showTutorial, setShowTutorial] = useState(false);
   const [pricesUpdatedAt, setPricesUpdatedAt] = useState<Date | null>(null);
@@ -389,6 +390,12 @@ export function App() {
               Análisis
             </button>
             <button
+              className={`tab ${tab === 'riesgo' ? 'tabActive' : ''}`}
+              onClick={() => setTab('riesgo')}
+            >
+              Riesgo
+            </button>
+            <button
               className={`tab ${tab === 'empresas' ? 'tabActive' : ''}`}
               onClick={() => setTab('empresas')}
             >
@@ -408,6 +415,12 @@ export function App() {
             <Analisis transactions={transactions} prices={prices} />
           ) : tab === 'empresas' ? (
             <Empresas tickers={view.positions.map((p) => p.ticker).filter((t) => !noLivePrice.has(t))} />
+          ) : tab === 'riesgo' ? (
+            <Riesgo
+              holdings={view.positions
+                .filter((p) => !noLivePrice.has(p.ticker))
+                .map((p) => ({ ticker: p.ticker, marketValueCents: p.marketValueCents }))}
+            />
           ) : (
           <>
           <section className="section">
