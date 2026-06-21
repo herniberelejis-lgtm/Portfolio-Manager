@@ -44,6 +44,8 @@ const TYPE_MAP: Record<string, TransactionType> = {
   'nota de credito conversion': 'deposit',
   'liquidacion suscripcion fci': 'buy',
   'liquidacion rescate fci': 'sell',
+  'renta y amortizacion': 'dividend', // bond coupon / principal payments (income)
+  'concepto ext migracion': 'deposit', // account-migration cash adjustment
 };
 
 function parseArgNumber(value: string): number {

@@ -493,6 +493,10 @@ body {
   background: var(--neg);
 }
 
+.empChart {
+  margin-top: 14px;
+}
+
 .empNews {
   margin-top: 14px;
   display: flex;

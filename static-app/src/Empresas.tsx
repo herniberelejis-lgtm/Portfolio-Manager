@@ -1,5 +1,61 @@
 import { useEffect, useState } from 'react';
+import { ResponsiveContainer, AreaChart, Area, XAxis, YAxis, Tooltip } from 'recharts';
 import { getAnalysis, type Analysis } from './finnhub';
+import { fetchPriceHistory, type PricePoint } from './twelvedata';
+
+function PriceChart({ ticker }: { ticker: string }) {
+  const [data, setData] = useState<PricePoint[] | null>(null);
+  const [failed, setFailed] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    fetchPriceHistory(ticker)
+      .then((d) => !cancelled && setData(d))
+      .catch(() => !cancelled && setFailed(true));
+    return () => {
+      cancelled = true;
+    };
+  }, [ticker]);
+
+  if (failed) return null;
+  if (!data) return <p className="hint">Cargando gráfico de precio…</p>;
+  if (data.length < 2) return null;
+
+  const first = data[0].close;
+  const last = data[data.length - 1].close;
+  const color = last >= first ? '#22c55e' : '#ef4444';
+  const periodPct = ((last / first - 1) * 100).toFixed(1);
+
+  return (
+    <div className="empChart">
+      <span className="cardLabel">
+        Precio · últimos {data.length} días{' '}
+        <span className={last >= first ? 'pos' : 'neg'}>
+          ({last >= first ? '+' : ''}
+          {periodPct}%)
+        </span>
+      </span>
+      <ResponsiveContainer width="100%" height={150}>
+        <AreaChart data={data} margin={{ top: 6, right: 6, bottom: 0, left: 0 }}>
+          <defs>
+            <linearGradient id={`g-${ticker}`} x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stopColor={color} stopOpacity={0.35} />
+              <stop offset="100%" stopColor={color} stopOpacity={0} />
+            </linearGradient>
+          </defs>
+          <XAxis dataKey="date" hide />
+          <YAxis domain={['auto', 'auto']} width={48} tick={{ fontSize: 11, fill: '#94a3b8' }} />
+          <Tooltip
+            contentStyle={{ background: '#1e293b', border: '1px solid #334155', borderRadius: 8 }}
+            labelStyle={{ color: '#94a3b8' }}
+            formatter={(v) => [`US$ ${Number(v).toLocaleString('es-AR', { maximumFractionDigits: 2 })}`, 'Cierre']}
+          />
+          <Area type="monotone" dataKey="close" stroke={color} fill={`url(#g-${ticker})`} strokeWidth={2} />
+        </AreaChart>
+      </ResponsiveContainer>
+    </div>
+  );
+}
 
 type CardState = { status: 'loading' | 'ok' | 'error'; data?: Analysis };
 
@@ -97,6 +153,8 @@ function Card({ ticker, state }: { ticker: string; state?: CardState }) {
           <span className="cardValue">{pct(a.netMargin)} · {pct(a.roe)}</span>
         </div>
       </div>
+
+      <PriceChart ticker={ticker} />
 
       {a.rec && <Consensus rec={a.rec} />}
 

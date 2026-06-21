@@ -32,6 +32,19 @@ describe('cocosDetailedParser', () => {
     expect(cocosDetailedParser.detect(['Fecha', 'Tipo'])).toBe(false);
   });
 
+  it('maps bond income and migration operation types without erroring', () => {
+    const r = (op: string, inst = '') =>
+      row({ fechaEjecucion: '10-07-2024', tipoOperacion: op, instrumento: inst, moneda: 'ARS', total: '-0,18' });
+    const csv = [
+      HEADER,
+      r('Renta Y Amortizacion', 'BONOS REP. ARG. (GD35)'),
+      r('Concepto EXT migracion'),
+    ].join('\n');
+    const { transactions, errors } = cocosDetailedParser.parse(csv);
+    expect(errors).toEqual([]);
+    expect(transactions.map((t) => t.type)).toEqual(['dividend', 'deposit']);
+  });
+
   it('accepts both dash and non-padded slash date formats', () => {
     const buy = (fecha: string) =>
       row({ fechaEjecucion: fecha, tipoOperacion: 'Compra', instrumento: 'GRUPO GALICIA (GGAL)', moneda: 'ARS', cantidad: '10', precio: '100', total: '-1.000' });

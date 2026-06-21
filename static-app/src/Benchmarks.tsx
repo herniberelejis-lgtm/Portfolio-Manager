@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { fetchBtcUsd, fetchCCL, fetchInflation, inflationAccum, latestValue, valueAtDate } from './benchmarks';
+import { fetchPeriodReturn } from './twelvedata';
 
 interface Props {
   startDate: Date | null;
@@ -14,6 +15,8 @@ interface Data {
   usdValue: number;
   btcReturnPct?: number;
   btcValue?: number;
+  sp500ReturnPct?: number;
+  argtReturnPct?: number;
 }
 
 function pctStr(n: number): string {
@@ -28,8 +31,14 @@ export function Benchmarks({ startDate, returnPct, currentValueCents }: Props) {
     if (!startDate) return;
     let cancelled = false;
     setState('loading');
-    Promise.all([fetchCCL(), fetchInflation(), fetchBtcUsd(startDate).catch(() => null)])
-      .then(([ccl, infl, btc]) => {
+    Promise.all([
+      fetchCCL(),
+      fetchInflation(),
+      fetchBtcUsd(startDate).catch(() => null),
+      fetchPeriodReturn('SPY', startDate).catch(() => null),
+      fetchPeriodReturn('ARGT', startDate).catch(() => null),
+    ])
+      .then(([ccl, infl, btc, sp500, argt]) => {
         if (cancelled) return;
         const cclNow = latestValue(ccl);
         const cclStart = valueAtDate(ccl, startDate);
@@ -42,6 +51,8 @@ export function Benchmarks({ startDate, returnPct, currentValueCents }: Props) {
           usdValue,
           btcReturnPct: btc ? (btc.now / btc.start - 1) * 100 : undefined,
           btcValue: btc ? usdValue / btc.now : undefined,
+          sp500ReturnPct: sp500 ?? undefined,
+          argtReturnPct: argt ?? undefined,
         });
         setState('ok');
       })
@@ -105,6 +116,20 @@ export function Benchmarks({ startDate, returnPct, currentValueCents }: Props) {
               <div className="card">
                 <span className="cardLabel">Tu cartera en BTC</span>
                 <span className="cardValue">₿ {data.btcValue.toLocaleString('es-AR', { maximumFractionDigits: 4 })}</span>
+              </div>
+            )}
+            {data.sp500ReturnPct != null && (
+              <div className="card">
+                <span className="cardLabel">S&amp;P 500 (período, USD)</span>
+                <span className={`cardValue ${data.sp500ReturnPct >= 0 ? 'pos' : 'neg'}`}>{pctStr(data.sp500ReturnPct)}</span>
+                <span className="cardSub">mercado de EEUU</span>
+              </div>
+            )}
+            {data.argtReturnPct != null && (
+              <div className="card">
+                <span className="cardLabel">Acciones ARG (período, USD)</span>
+                <span className={`cardValue ${data.argtReturnPct >= 0 ? 'pos' : 'neg'}`}>{pctStr(data.argtReturnPct)}</span>
+                <span className="cardSub">ETF ARGT (proxy Merval)</span>
               </div>
             )}
           </div>
