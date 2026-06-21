@@ -444,6 +444,74 @@ body {
   font-size: 0.9rem;
 }
 
+/* Empresas (fundamentals) */
+.empHeader {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 14px;
+}
+
+.empLogo {
+  width: 40px;
+  height: 40px;
+  border-radius: 8px;
+  background: #fff;
+  object-fit: contain;
+  flex-shrink: 0;
+}
+
+.empPrice {
+  margin-left: auto;
+  text-align: right;
+  display: flex;
+  flex-direction: column;
+}
+
+.consBar {
+  display: flex;
+  height: 12px;
+  border-radius: 6px;
+  overflow: hidden;
+  margin-top: 12px;
+  background: var(--panel2);
+}
+
+.consSeg {
+  height: 100%;
+}
+
+.consSeg.pos {
+  background: var(--pos);
+}
+
+.consSeg.hold {
+  background: var(--muted);
+}
+
+.consSeg.neg {
+  background: var(--neg);
+}
+
+.empNews {
+  margin-top: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.newsLink {
+  color: var(--text);
+  text-decoration: none;
+  font-size: 0.9rem;
+  border-left: 2px solid var(--accent);
+  padding-left: 10px;
+}
+
+.newsLink:hover {
+  color: var(--accent);
+}
+
 /* Tutorial modal */
 .modalOverlay {
   position: fixed;
