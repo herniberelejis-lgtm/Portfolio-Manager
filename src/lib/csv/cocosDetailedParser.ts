@@ -103,7 +103,11 @@ export const cocosDetailedParser: BrokerParser = {
         result.transactions.push({
           date: parseDdMmYyyy(row['fechaEjecucion']),
           type,
-          ticker: isTrade ? ticker : null,
+          // Keep the instrument's ticker on non-trade rows too (e.g. dividends),
+          // so two dividends from different stocks on the same date/amount don't
+          // collapse to the same row hash. quantity is null, so the P&L engine
+          // still ignores them for positions.
+          ticker,
           quantity: isTrade && row['cantidad']?.trim() ? Math.abs(parseArgNumber(row['cantidad'])) : null,
           price: isTrade && row['precio']?.trim() ? Math.abs(parseArgNumber(row['precio'])) : null,
           currency: row['moneda'].trim() as 'ARS' | 'USD',

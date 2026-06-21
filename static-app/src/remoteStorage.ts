@@ -56,7 +56,11 @@ export async function insertTransactions(
     amount_cents: t.amountCents.toString(),
     raw_row: t.rawRow ?? {},
   }));
-  const { error } = await supabase!.from('transactions').insert(rows);
+  // Ignore rows whose (user_id, row_hash) already exists instead of erroring,
+  // so re-importing an overlapping file never crashes the import.
+  const { error } = await supabase!
+    .from('transactions')
+    .upsert(rows, { onConflict: 'user_id,row_hash', ignoreDuplicates: true });
   if (error) throw error;
   return fresh.length;
 }
