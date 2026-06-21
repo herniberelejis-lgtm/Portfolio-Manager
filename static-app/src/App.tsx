@@ -16,6 +16,7 @@ import {
   insertTransactions,
   upsertPrices,
 } from './remoteStorage';
+import { noLivePriceTickers } from './analytics';
 import { Auth } from './Auth';
 import { Charts } from './Charts';
 import { Movimientos } from './Movimientos';
@@ -122,6 +123,7 @@ export function App() {
   }, [session]);
 
   const view = useMemo(() => buildView(transactions, prices), [transactions, prices]);
+  const noLivePrice = useMemo(() => noLivePriceTickers(transactions), [transactions]);
 
   // Seed the current price for any held ticker without one yet (default to its
   // average cost = break-even). Seeded defaults stay in memory only.
@@ -146,7 +148,7 @@ export function App() {
   // keep the seeded average-cost prices and the user can still edit by hand.
   useEffect(() => {
     if (!session || transactions.length === 0) return;
-    const tickers = heldTickers(transactions);
+    const tickers = heldTickers(transactions).filter((t) => !noLivePrice.has(t));
     if (tickers.length === 0) return;
     let cancelled = false;
     syncPrices(tickers)
@@ -218,7 +220,7 @@ export function App() {
     setBusy(true);
     setMessage('');
     try {
-      const tickers = view.positions.map((p) => p.ticker);
+      const tickers = view.positions.map((p) => p.ticker).filter((t) => !noLivePrice.has(t));
       const fetched = await syncPrices(tickers);
       if (Object.keys(fetched).length === 0) {
         setMessage('No se encontraron cotizaciones para tus tickers en data912.');
@@ -326,8 +328,9 @@ export function App() {
       <section className="section import">
         <h2 className="sectionTitle">Importar movimientos</h2>
         <p className="hint">
-          Subí el CSV de <strong>Cocos Capital</strong> o <strong>Bull Market</strong>, o el
-          XLSX de <strong>PPI</strong>. Podés subir varios archivos.
+          Subí el CSV de <strong>movimientos</strong> de Cocos Capital o Bull Market (o el XLSX de
+          PPI) para el análisis completo. ¿Solo querés seguir tu cartera actual? Subí tu
+          <strong> reporte de tenencias</strong> (posiciones de hoy). Podés subir varios archivos.
         </p>
         <div className="importRow">
           <label className="fileBtn">

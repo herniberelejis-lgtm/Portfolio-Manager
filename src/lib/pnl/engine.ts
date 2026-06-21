@@ -66,8 +66,9 @@ export function computePosition(transactions: PositionInput[], currentPriceCents
     }
   }
 
-  const avgCostPerUnitCents = quantity > 0 ? totalCostCents / BigInt(quantity) : 0n;
-  const marketValueCents = BigInt(quantity) * currentPriceCents;
+  // quantity can be fractional (e.g. FCI cuotapartes), so avoid BigInt(quantity).
+  const avgCostPerUnitCents = quantity > 0 ? BigInt(Math.round(Number(totalCostCents) / quantity)) : 0n;
+  const marketValueCents = BigInt(Math.round(quantity * Number(currentPriceCents)));
   const unrealizedPnlCents = marketValueCents - totalCostCents;
 
   return {

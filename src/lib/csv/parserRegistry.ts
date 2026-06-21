@@ -1,10 +1,11 @@
 import { parse } from 'csv-parse/sync';
 import { cocosParser } from './cocosParser';
 import { cocosDetailedParser } from './cocosDetailedParser';
+import { cocosHoldingsParser } from './cocosHoldingsParser';
 import { bullMarketParser } from './bullMarketParser';
 import type { BrokerParser, ParsedTransaction, RowError } from './types';
 
-const PARSERS: BrokerParser[] = [cocosParser, cocosDetailedParser, bullMarketParser];
+const PARSERS: BrokerParser[] = [cocosParser, cocosDetailedParser, cocosHoldingsParser, bullMarketParser];
 
 export function detectAndParse(
   csvContent: string

@@ -31,6 +31,21 @@ function tickerClass(txs: ParsedTransaction[]): AssetClass {
   return classifyInstrument(t?.rawRow?.instrumento, t?.rawRow?.tipoOperacion);
 }
 
+/** Tickers whose live data912 price is an unreliable basis for quantity*price:
+ *  bonds/ONs are quoted per 100 nominal value and FCI in cuotapartes, so a raw
+ *  qty*price overstates value (often ~100x). We keep these at their imported
+ *  value instead of overriding with a live price. */
+export function noLivePriceTickers(transactions: ParsedTransaction[]): Set<string> {
+  const out = new Set<string>();
+  const seen = new Map<string, ParsedTransaction>();
+  for (const t of transactions) if (t.ticker && !seen.has(t.ticker)) seen.set(t.ticker, t);
+  for (const [ticker, t] of seen) {
+    const cls = classifyInstrument(t.rawRow?.instrumento, t.rawRow?.tipoOperacion);
+    if (cls === 'Bono/ON' || cls === 'FCI') out.add(ticker);
+  }
+  return out;
+}
+
 export interface CostSummary {
   comision: number;
   derechos: number;
