@@ -575,9 +575,27 @@ body {
   border: 1px solid var(--border);
   border-radius: 16px;
   padding: 28px;
-  max-width: 640px;
+  max-width: 680px;
   width: 100%;
   position: relative;
+  max-height: 90vh;
+  overflow-y: auto;
+}
+
+.helpBtn {
+  background: rgba(99, 102, 241, 0.18);
+  color: #a5b4fc;
+  border: 1px solid var(--accent);
+  padding: 8px 14px;
+  border-radius: 10px;
+  cursor: pointer;
+  font-weight: 700;
+  font-size: 0.9rem;
+}
+
+.helpBtn:hover {
+  background: var(--accent);
+  color: #fff;
 }
 
 .modalClose {

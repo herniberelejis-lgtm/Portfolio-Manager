@@ -129,6 +129,19 @@ export function App() {
   const view = useMemo(() => buildView(transactions, prices), [transactions, prices]);
   const noLivePrice = useMemo(() => noLivePriceTickers(transactions), [transactions]);
 
+  // Show the tutorial automatically the first time a new user lands with no data.
+  useEffect(() => {
+    if (!session || loadingData) return;
+    if (transactions.length === 0 && !localStorage.getItem('pm_tut_seen')) {
+      setShowTutorial(true);
+      try {
+        localStorage.setItem('pm_tut_seen', '1');
+      } catch {
+        /* ignore */
+      }
+    }
+  }, [session, loadingData, transactions.length]);
+
   // Seed the current price for any held ticker without one yet (default to its
   // average cost = break-even). Seeded defaults stay in memory only.
   useEffect(() => {
@@ -315,8 +328,8 @@ export function App() {
         <div className="headerTop">
           <h1>📊 Portfolio Manager</h1>
           <div className="userBox">
-            <button className="ghostBtn" onClick={() => setShowTutorial(true)}>
-              ❓ Cómo se usa
+            <button className="helpBtn" onClick={() => setShowTutorial(true)}>
+              ❓ Cómo funciona
             </button>
             <span className="userEmail">{session.user.email}</span>
             <button className="ghostBtn" onClick={handleLogout}>
