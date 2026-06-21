@@ -589,6 +589,48 @@ body {
   font-weight: 600;
 }
 
+/* Conclusiones */
+.conclList {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 8px;
+}
+
+.conclItem {
+  display: flex;
+  gap: 12px;
+  padding: 12px 14px;
+  border-radius: 10px;
+  background: var(--panel2);
+  border-left: 4px solid var(--border);
+}
+
+.conclItem.good {
+  border-left-color: var(--pos);
+}
+
+.conclItem.warn {
+  border-left-color: #f59e0b;
+}
+
+.conclItem.bad {
+  border-left-color: var(--neg);
+}
+
+.conclIcon {
+  font-size: 1.1rem;
+}
+
+.conclTitle {
+  font-weight: 700;
+}
+
+.conclDetail {
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+
 /* Expandable holdings rows */
 .rowClickable {
   cursor: pointer;

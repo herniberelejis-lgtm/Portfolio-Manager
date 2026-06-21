@@ -14,6 +14,8 @@ import {
   type Flow,
 } from './analytics';
 import { Benchmarks } from './Benchmarks';
+import { Conclusiones } from './Conclusiones';
+import type { ConclusionInput } from './insights';
 
 function pesos(cents: bigint): number {
   return Number(cents) / 100;
@@ -107,14 +109,37 @@ export function Analisis({
       ? new Date(Math.min(...transactions.map((t) => t.date.getTime())))
       : null;
 
+    const cedearB = beh.byClass.find((c) => c.assetClass === 'CEDEAR');
+    const argB = beh.byClass.find((c) => c.assetClass === 'Acción ARG');
+    const conclusionInput: ConclusionInput = {
+      maxPosTicker: conc[0]?.ticker ?? '—',
+      maxPosPct: conc[0]?.pct ?? 0,
+      maxClassName: classes[0]?.assetClass ?? '—',
+      maxClassPct: classes[0]?.pctOfHeld ?? 0,
+      classCount: classes.length,
+      usdPct: fx.usdPct,
+      cedear: cedearB ? { winRatePct: cedearB.winRatePct, realizedCents: cedearB.realizedCents } : undefined,
+      arg: argB ? { winRatePct: argB.winRatePct, realizedCents: argB.realizedCents } : undefined,
+      winRatePct: oq.winRatePct,
+      totalSales: oq.totalSales,
+      riskReward: oq.riskReward,
+      costsPctOfVolume: costs.pctSobreVolumen,
+      totalPnlCents: totalPnl,
+      returnPct,
+      holdingsCount: held.length,
+    };
+
     return {
       stats, costs, cf, oq, classes, currentValue, latent, realized, totalPnl, returnPct,
       tir, conc, riskLevel, liqAltaPct, priceAlerts, realizedRows, held, beh, fiscal, fx, startDate,
+      conclusionInput,
     };
   }, [transactions, prices]);
 
   return (
     <div>
+      <Conclusiones input={a.conclusionInput} startDate={a.startDate} returnPct={a.returnPct} />
+
       {/* Executive summary */}
       <section className="section">
         <h2 className="sectionTitle">Resumen ejecutivo</h2>
