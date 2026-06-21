@@ -44,6 +44,10 @@ export interface Analysis {
   roe?: number;
   revGrowth?: number;
   divYield?: number;
+  eps?: number;
+  beta?: number;
+  yearReturnPct?: number;
+  prevClose?: number;
   rec?: {
     strongBuy: number;
     buy: number;
@@ -102,6 +106,10 @@ async function fetchAnalysis(ticker: string): Promise<Analysis> {
     roe: num(m.roeTTM) ?? num(m.roeRfy),
     revGrowth: num(m.revenueGrowthTTMYoy),
     divYield: num(m.dividendYieldIndicatedAnnual),
+    eps: num(m.epsTTM) ?? num(m.epsBasicExclExtraItemsTTM) ?? num(m.epsInclExtraItemsTTM),
+    beta: num(m.beta),
+    yearReturnPct: num(m['52WeekPriceReturnDaily']),
+    prevClose: num(quote.pc),
     rec: Array.isArray(recs) && recs.length ? recs[0] : null,
     news: (Array.isArray(news) ? news : []).slice(0, 5).map((n: any) => ({
       headline: n.headline,

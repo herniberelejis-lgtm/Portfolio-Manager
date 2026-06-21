@@ -518,6 +518,77 @@ body {
   padding: 4px 2px 8px;
 }
 
+/* Investing.com-style company detail */
+.ivHeader {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-bottom: 10px;
+}
+
+.ivName {
+  font-size: 1.1rem;
+  font-weight: 700;
+}
+
+.ivTicker {
+  color: var(--muted);
+  font-weight: 600;
+  font-size: 0.85rem;
+}
+
+.ivIndustry {
+  color: var(--muted);
+  font-size: 0.82rem;
+}
+
+.ivPrice {
+  text-align: right;
+}
+
+.ivPriceNum {
+  font-size: 1.5rem;
+  font-weight: 800;
+}
+
+.ovHead {
+  display: block;
+  color: var(--muted);
+  font-size: 0.8rem;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  margin: 16px 0 6px;
+  font-weight: 700;
+}
+
+.ovBlock {
+  margin-top: 6px;
+}
+
+.ovGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+  gap: 0 24px;
+}
+
+.ovItem {
+  display: flex;
+  justify-content: space-between;
+  padding: 9px 0;
+  border-bottom: 1px solid var(--border);
+  font-size: 0.9rem;
+}
+
+.ovLabel {
+  color: var(--muted);
+}
+
+.ovVal {
+  font-weight: 600;
+}
+
 /* Expandable holdings rows */
 .rowClickable {
   cursor: pointer;

@@ -40,12 +40,14 @@ export function Tutorial({ onClose }: Props) {
           <li><strong>"Cargar ejemplo":</strong> probá la app con datos de muestra, sin subir nada.</li>
         </ul>
 
-        <h2 className="tutH">🟣 Paso 3 · Explorá las 5 pestañas</h2>
+        <h2 className="tutH">🟣 Paso 3 · Explorá las 4 pestañas</h2>
         <ul className="tutList">
           <li>
-            <strong>📋 Resumen:</strong> valor de tu cartera, P&amp;L, y la tabla de tenencias.
-            <strong> Tocá cualquier fila</strong> y se despliega el <strong>gráfico de precio</strong>
-            {' '}(1M/3M/6M/1A) y los datos de esa empresa.
+            <strong>📋 Resumen:</strong> valor de tu cartera, P&amp;L y la tabla de tenencias.
+            <strong> Tocá cualquier fila</strong> y se despliega el detalle de la empresa al estilo
+            Investing: <strong>gráfico de precio</strong> (1S/1M/3M/6M/1A), datos clave (P/E, PEG,
+            Beta, market cap, rango de 52 semanas…), <strong>consenso de analistas</strong> y
+            <strong> noticias</strong>.
           </li>
           <li>
             <strong>📈 Análisis:</strong> el cerebro de la app — resumen ejecutivo, <strong>TIR</strong>,
@@ -58,10 +60,6 @@ export function Tutorial({ onClose }: Props) {
             <strong>🛡️ Riesgo:</strong> volatilidad, <strong>VaR</strong> (cuánto podrías perder en un
             mes malo), drawdown máximo, simulación de escenarios (−20/−40/−70%) y la
             <strong> correlación</strong> entre tus activos (¿estás bien diversificado?).
-          </li>
-          <li>
-            <strong>🏢 Empresas:</strong> análisis fundamental de cada acción/CEDEAR — P/E, PEG,
-            distancia del máximo, consenso de analistas, noticias y gráfico de precio.
           </li>
           <li>
             <strong>🧾 Movimientos:</strong> todas tus operaciones con filtros (compras, ventas,
