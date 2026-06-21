@@ -24,6 +24,7 @@ import { Analisis } from './Analisis';
 import { CompanyDetail } from './CompanyDetail';
 import { Riesgo } from './Riesgo';
 import { Tutorial } from './Tutorial';
+import { Asistente } from './Asistente';
 
 function centsToPesos(cents: bigint): number {
   return Number(cents) / 100;
@@ -82,7 +83,7 @@ export function App() {
   const [message, setMessage] = useState('');
   const [busy, setBusy] = useState(false);
   const [loadingData, setLoadingData] = useState(false);
-  const [tab, setTab] = useState<'resumen' | 'analisis' | 'riesgo' | 'movimientos'>('resumen');
+  const [tab, setTab] = useState<'resumen' | 'analisis' | 'riesgo' | 'movimientos' | 'asistente'>('resumen');
   const [expandedTicker, setExpandedTicker] = useState<string | null>(null);
   const [showTutorial, setShowTutorial] = useState(false);
   const [pricesUpdatedAt, setPricesUpdatedAt] = useState<Date | null>(null);
@@ -413,10 +414,18 @@ export function App() {
             >
               Movimientos
             </button>
+            <button
+              className={`tab ${tab === 'asistente' ? 'tabActive' : ''}`}
+              onClick={() => setTab('asistente')}
+            >
+              Asistente IA
+            </button>
           </div>
 
           {tab === 'movimientos' ? (
             <Movimientos transactions={transactions} />
+          ) : tab === 'asistente' ? (
+            <Asistente transactions={transactions} prices={prices} />
           ) : tab === 'analisis' ? (
             <Analisis transactions={transactions} prices={prices} />
           ) : tab === 'riesgo' ? (

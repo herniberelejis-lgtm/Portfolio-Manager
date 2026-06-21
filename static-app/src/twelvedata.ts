@@ -1,7 +1,7 @@
 // Twelve Data client (free tier, browser-friendly CORS): historical price
 // series for stock charts and index/ETF period returns for benchmarks. The key
 // is public for client use; it only fetches market data (no user info).
-import { lookupSymbol } from './finnhub';
+import { hasUsListing, lookupSymbol } from './finnhub';
 
 const KEY = '29fc27b8229845cf85971ce33265c193';
 const TD = 'https://api.twelvedata.com';
@@ -25,6 +25,7 @@ async function timeSeries(symbol: string, extra: string): Promise<PricePoint[]> 
 /** Daily close history for a ticker's chart (cached 3h). Fetches ~1y so the
  *  UI can slice shorter timeframes without re-fetching. */
 export async function fetchPriceHistory(ticker: string, days = 365): Promise<PricePoint[]> {
+  if (!hasUsListing(ticker)) throw new Error(`${ticker}: sin listado en EE.UU.`);
   const symbol = lookupSymbol(ticker);
   const key = `pm_px_${symbol}`;
   try {

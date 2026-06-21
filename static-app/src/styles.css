@@ -773,3 +773,44 @@ body {
   width: 100%;
   text-align: center;
 }
+
+/* AI assistant chat */
+.aiChat {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-bottom: 14px;
+  max-height: 440px;
+  overflow-y: auto;
+}
+
+.aiMsg {
+  padding: 10px 14px;
+  border-radius: 10px;
+  font-size: 0.92rem;
+  line-height: 1.5;
+  max-width: 85%;
+  white-space: pre-wrap;
+}
+
+.aiMsg.user {
+  background: var(--accent);
+  color: #fff;
+  align-self: flex-end;
+}
+
+.aiMsg.model {
+  background: var(--panel2);
+  border: 1px solid var(--border);
+  align-self: flex-start;
+}
+
+.aiInput {
+  flex: 1;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  color: var(--text);
+  border-radius: 8px;
+  padding: 10px 12px;
+  font-size: 0.95rem;
+}

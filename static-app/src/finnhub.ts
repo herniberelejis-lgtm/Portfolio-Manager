@@ -12,8 +12,18 @@ const SYMBOL_MAP: Record<string, string> = {
   TXAR: 'TX', CAAP: 'CAAP', DESP: 'DESP', GLOB: 'GLOB', MELI: 'MELI', VIST: 'VIST',
 };
 
+// Local tickers that happen to share a letters-only symbol with an unrelated
+// US-listed company (no real ADR/CEDEAR link). Without this guard, a ticker
+// like CELU (Celulosa Argentina, BYMA-only) would silently resolve to
+// Celularity Inc (NYSE: CELU) and show that company's data instead.
+const NO_US_LISTING = new Set(['CELU']);
+
 export function lookupSymbol(ticker: string): string {
   return SYMBOL_MAP[ticker] ?? ticker;
+}
+
+export function hasUsListing(ticker: string): boolean {
+  return !NO_US_LISTING.has(ticker);
 }
 
 async function get(path: string): Promise<any> {
@@ -65,6 +75,9 @@ function num(v: unknown): number | undefined {
 }
 
 async function fetchAnalysis(ticker: string): Promise<Analysis> {
+  if (!hasUsListing(ticker)) {
+    return { ticker, symbol: ticker, news: [], hasData: false };
+  }
   const symbol = lookupSymbol(ticker);
   const [quote, profile, metricResp, recs] = await Promise.all([
     get(`/quote?symbol=${symbol}`).catch(() => ({})),
