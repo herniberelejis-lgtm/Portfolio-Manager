@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { Fragment, useEffect, useMemo, useState } from 'react';
 import type { Session } from '@supabase/supabase-js';
 import {
   buildView,
@@ -22,6 +22,7 @@ import { Charts } from './Charts';
 import { Movimientos } from './Movimientos';
 import { Analisis } from './Analisis';
 import { Empresas } from './Empresas';
+import { CompanyDetail } from './CompanyDetail';
 import { Tutorial } from './Tutorial';
 
 function centsToPesos(cents: bigint): number {
@@ -82,6 +83,7 @@ export function App() {
   const [busy, setBusy] = useState(false);
   const [loadingData, setLoadingData] = useState(false);
   const [tab, setTab] = useState<'resumen' | 'analisis' | 'empresas' | 'movimientos'>('resumen');
+  const [expandedTicker, setExpandedTicker] = useState<string | null>(null);
   const [showTutorial, setShowTutorial] = useState(false);
   const [pricesUpdatedAt, setPricesUpdatedAt] = useState<Date | null>(null);
 
@@ -461,35 +463,56 @@ export function App() {
                   </tr>
                 </thead>
                 <tbody>
-                  {view.positions.map((p) => (
-                    <tr key={p.ticker}>
-                      <td className="ticker">{p.ticker}</td>
-                      <td>{p.quantity}</td>
-                      <td>{formatMoney(p.avgCostCents, p.currency)}</td>
-                      <td>
-                        <input
-                          className="priceInput"
-                          inputMode="decimal"
-                          value={priceInputs[p.ticker] ?? ''}
-                          onChange={(e) => updatePrice(p.ticker, e.target.value)}
-                        />
-                      </td>
-                      <td>{formatMoney(p.marketValueCents, p.currency)}</td>
-                      <td className={p.unrealizedPnlCents >= 0n ? 'pos' : 'neg'}>
-                        {formatMoney(p.unrealizedPnlCents, p.currency)}
-                      </td>
-                      <td className={p.realizedPnlCents >= 0n ? 'pos' : 'neg'}>
-                        {formatMoney(p.realizedPnlCents, p.currency)}
-                      </td>
-                      <td>{p.pctOfPortfolio.toFixed(1)}%</td>
-                    </tr>
-                  ))}
+                  {view.positions.map((p) => {
+                    const canExpand = !noLivePrice.has(p.ticker);
+                    const isOpen = expandedTicker === p.ticker;
+                    return (
+                      <Fragment key={p.ticker}>
+                        <tr
+                          className={canExpand ? 'rowClickable' : ''}
+                          onClick={canExpand ? () => setExpandedTicker(isOpen ? null : p.ticker) : undefined}
+                        >
+                          <td className="ticker">
+                            {canExpand && <span className="chevron">{isOpen ? '▾' : '▸'}</span>}
+                            {p.ticker}
+                          </td>
+                          <td>{p.quantity}</td>
+                          <td>{formatMoney(p.avgCostCents, p.currency)}</td>
+                          <td>
+                            <input
+                              className="priceInput"
+                              inputMode="decimal"
+                              value={priceInputs[p.ticker] ?? ''}
+                              onClick={(e) => e.stopPropagation()}
+                              onChange={(e) => updatePrice(p.ticker, e.target.value)}
+                            />
+                          </td>
+                          <td>{formatMoney(p.marketValueCents, p.currency)}</td>
+                          <td className={p.unrealizedPnlCents >= 0n ? 'pos' : 'neg'}>
+                            {formatMoney(p.unrealizedPnlCents, p.currency)}
+                          </td>
+                          <td className={p.realizedPnlCents >= 0n ? 'pos' : 'neg'}>
+                            {formatMoney(p.realizedPnlCents, p.currency)}
+                          </td>
+                          <td>{p.pctOfPortfolio.toFixed(1)}%</td>
+                        </tr>
+                        {isOpen && (
+                          <tr className="detailRow">
+                            <td colSpan={8}>
+                              <CompanyDetail ticker={p.ticker} />
+                            </td>
+                          </tr>
+                        )}
+                      </Fragment>
+                    );
+                  })}
                 </tbody>
               </table>
             </div>
             <p className="hint">
-              El precio actual arranca en el costo promedio. Editalo o usá “Sincronizar
-              precios” para ver el P&amp;L no realizado real.
+              👆 Tocá una fila para ver el <strong>gráfico de precio</strong> y los datos
+              financieros de la empresa. El precio actual arranca en el costo promedio; editalo o
+              usá “Actualizar precios”.
             </p>
           </section>
 

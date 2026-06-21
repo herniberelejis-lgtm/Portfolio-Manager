@@ -497,6 +497,47 @@ body {
   margin-top: 14px;
 }
 
+.chartHead {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+
+.empHeadRow {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 12px;
+  margin: 6px 0 12px;
+}
+
+.companyDetail {
+  padding: 4px 2px 8px;
+}
+
+/* Expandable holdings rows */
+.rowClickable {
+  cursor: pointer;
+}
+
+.rowClickable:hover {
+  background: var(--panel2);
+}
+
+.chevron {
+  display: inline-block;
+  width: 14px;
+  color: var(--muted);
+}
+
+.detailRow td {
+  background: var(--bg);
+  padding: 8px 12px 16px;
+}
+
 .empNews {
   margin-top: 14px;
   display: flex;

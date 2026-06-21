@@ -22,8 +22,9 @@ async function timeSeries(symbol: string, extra: string): Promise<PricePoint[]> 
     .reverse(); // ascending by date
 }
 
-/** Daily close history for a ticker's chart (cached 3h). */
-export async function fetchPriceHistory(ticker: string, days = 120): Promise<PricePoint[]> {
+/** Daily close history for a ticker's chart (cached 3h). Fetches ~1y so the
+ *  UI can slice shorter timeframes without re-fetching. */
+export async function fetchPriceHistory(ticker: string, days = 365): Promise<PricePoint[]> {
   const symbol = lookupSymbol(ticker);
   const key = `pm_px_${symbol}`;
   try {
