@@ -57,20 +57,39 @@ export async function askPortfolioAI(
     thinkingConfig: { thinkingBudget: 0 },
   };
 
+  const payload = JSON.stringify({ contents, generationConfig });
   // With a personal key, call Gemini directly; otherwise use the shared proxy
   // (which injects the server-side key and forwards the same request body).
-  const res = apiKey
-    ? await fetch(`${GEMINI_URL}?key=${encodeURIComponent(apiKey)}`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ contents, generationConfig }),
-      })
-    : await fetch(PROXY_URL, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ contents, generationConfig }),
-      });
+  const doFetch = () =>
+    apiKey
+      ? fetch(`${GEMINI_URL}?key=${encodeURIComponent(apiKey)}`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: payload,
+        })
+      : fetch(PROXY_URL, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: payload,
+        });
+
+  // Gemini's free tier intermittently returns 503/429 under load ("high
+  // demand"). These are transient, so retry a few times with a short backoff
+  // before surfacing the error to the user.
+  const RETRYABLE = new Set([429, 500, 503]);
+  let res: Response;
+  for (let attempt = 0; ; attempt++) {
+    res = await doFetch();
+    if (res.ok || !RETRYABLE.has(res.status) || attempt >= 2) break;
+    await new Promise((r) => setTimeout(r, 900 * (attempt + 1)));
+  }
+
   if (!res.ok) {
+    if (RETRYABLE.has(res.status)) {
+      throw new Error(
+        'El modelo de IA está sobrecargado en este momento (pico de demanda de Google). Esperá unos segundos y volvé a preguntar.',
+      );
+    }
     const body = await res.text().catch(() => '');
     throw new Error(`La IA respondió ${res.status}: ${body.slice(0, 200)}`);
   }
