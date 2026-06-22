@@ -6,3 +6,9 @@ prisma/dev.db
 prisma/dev.db-journal
 coverage
 .git
+# This Vercel deploy hosts ONLY the api/ AI proxy; the static app is on GitHub
+# Pages, so its sources/build output don't need uploading.
+docs
+static-app
+src
+tests

@@ -1,0 +1,6 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "framework": null,
+  "buildCommand": "mkdir -p public && printf '%s' 'Portfolio Manager AI proxy. App: https://herniberelejis-lgtm.github.io/Portfolio-Manager/' > public/index.html",
+  "outputDirectory": "public"
+}
