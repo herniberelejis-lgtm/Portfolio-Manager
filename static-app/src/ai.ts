@@ -1,12 +1,33 @@
 // Free-tier AI assistant. Uses Google Gemini's no-cost API tier (no credit
-// card required) called directly from the browser — the same trust model
-// already used for the Finnhub/Twelve Data keys in this app: the key is
-// public, but it only ever reads/writes the user's own portfolio numbers
-// that we send as context, nothing sensitive lives server-side anyway.
-const GEMINI_API_KEY = 'PASTE_YOUR_FREE_GEMINI_KEY_HERE';
+// card required) called directly from the browser. Unlike the Finnhub/Twelve
+// Data market-data keys, the Gemini key is NOT embedded in the repo: a Gemini
+// key can be bound to a GCP service account (broader scope than just the AI
+// API), so each user pastes their own key once and we keep it only in their
+// browser's localStorage — it never touches the public source.
 const GEMINI_URL = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent';
+const KEY_STORAGE = 'pm_gemini_key';
 
-export const aiConfigured = GEMINI_API_KEY.length > 10 && !GEMINI_API_KEY.startsWith('PASTE_');
+export function getApiKey(): string {
+  try {
+    return localStorage.getItem(KEY_STORAGE) ?? '';
+  } catch {
+    return '';
+  }
+}
+
+export function setApiKey(key: string): void {
+  try {
+    const k = key.trim();
+    if (k) localStorage.setItem(KEY_STORAGE, k);
+    else localStorage.removeItem(KEY_STORAGE);
+  } catch {
+    /* ignore */
+  }
+}
+
+export function isAiConfigured(): boolean {
+  return getApiKey().length > 10;
+}
 
 export interface ChatMessage {
   role: 'user' | 'model';
@@ -20,7 +41,8 @@ export async function askPortfolioAI(
   context: string,
   history: ChatMessage[],
 ): Promise<string> {
-  if (!aiConfigured) throw new Error('Falta configurar la clave gratuita de IA (Gemini).');
+  const apiKey = getApiKey();
+  if (!apiKey) throw new Error('Falta configurar la clave gratuita de IA (Gemini).');
 
   const contents = [
     { role: 'user', parts: [{ text: `${SYSTEM_PROMPT}\n\nDatos de la cartera:\n${context}` }] },
@@ -29,7 +51,7 @@ export async function askPortfolioAI(
     { role: 'user', parts: [{ text: question }] },
   ];
 
-  const res = await fetch(`${GEMINI_URL}?key=${GEMINI_API_KEY}`, {
+  const res = await fetch(`${GEMINI_URL}?key=${encodeURIComponent(apiKey)}`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({

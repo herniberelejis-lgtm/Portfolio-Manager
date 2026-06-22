@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import type { ParsedTransaction } from './portfolio';
-import { askPortfolioAI, aiConfigured, type ChatMessage } from './ai';
+import { askPortfolioAI, isAiConfigured, setApiKey, type ChatMessage } from './ai';
 import { buildPortfolioContext } from './aiContext';
 
 const SUGGESTIONS = [
@@ -21,6 +21,16 @@ export function Asistente({
   const [input, setInput] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
+  const [configured, setConfigured] = useState(isAiConfigured());
+  const [keyInput, setKeyInput] = useState('');
+
+  function saveKey() {
+    const k = keyInput.trim();
+    if (k.length <= 10) return;
+    setApiKey(k);
+    setKeyInput('');
+    setConfigured(true);
+  }
 
   async function send(question: string) {
     const q = question.trim();
@@ -41,18 +51,31 @@ export function Asistente({
     }
   }
 
-  if (!aiConfigured) {
+  if (!configured) {
     return (
       <section className="section">
         <h2 className="sectionTitle">Asistente (IA)</h2>
         <p className="hint">
-          Falta configurar una clave gratuita de Google Gemini para habilitar esta función.
-          Conseguí una sin costo (no pide tarjeta) en{' '}
+          Para habilitar esta función pegá una clave gratuita de Google Gemini (no pide tarjeta).
+          Conseguila en{' '}
           <a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener noreferrer">
             aistudio.google.com/apikey
-          </a>{' '}
-          y pegala en <code>static-app/src/ai.ts</code>.
+          </a>
+          . La clave se guarda solo en este navegador (localStorage) y nunca se sube a ningún lado.
         </p>
+        <div className="importRow">
+          <input
+            className="aiInput"
+            type="password"
+            placeholder="Pegá tu clave de Gemini…"
+            value={keyInput}
+            onChange={(e) => setKeyInput(e.target.value)}
+            onKeyDown={(e) => e.key === 'Enter' && saveKey()}
+          />
+          <button className="fileBtn" onClick={saveKey} disabled={keyInput.trim().length <= 10}>
+            Guardar
+          </button>
+        </div>
       </section>
     );
   }
@@ -62,7 +85,18 @@ export function Asistente({
       <h2 className="sectionTitle">Asistente (IA)</h2>
       <p className="hint">
         Preguntale en lenguaje natural sobre tu propia cartera. Responde solo con tus datos reales
-        — no es asesoramiento financiero.
+        — no es asesoramiento financiero.{' '}
+        <a
+          href="#"
+          onClick={(e) => {
+            e.preventDefault();
+            setApiKey('');
+            setConfigured(false);
+          }}
+        >
+          Cambiar clave
+        </a>
+        .
       </p>
 
       {messages.length === 0 && (
