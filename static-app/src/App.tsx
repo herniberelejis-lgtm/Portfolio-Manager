@@ -3,11 +3,14 @@ import type { Session } from '@supabase/supabase-js';
 import {
   buildView,
   heldTickers,
-  parseCsv,
-  parseXlsx,
+  parseCsvOrGrid,
+  parseXlsxOrGrid,
   syncPrices,
+  type GridData,
   type ParsedTransaction,
 } from './portfolio';
+import { ColumnMapper } from './ColumnMapper';
+import type { ParseResult } from '../../src/lib/csv/types';
 import { supabase, supabaseConfigured } from './supabaseClient';
 import {
   deleteAllData,
@@ -82,6 +85,7 @@ export function App() {
   const [errors, setErrors] = useState<{ row: number; message: string }[]>([]);
   const [message, setMessage] = useState('');
   const [busy, setBusy] = useState(false);
+  const [mapper, setMapper] = useState<{ grid: GridData; fileName: string } | null>(null);
   const [loadingData, setLoadingData] = useState(false);
   const [tab, setTab] = useState<'resumen' | 'analisis' | 'riesgo' | 'movimientos' | 'asistente'>('resumen');
   const [expandedTicker, setExpandedTicker] = useState<string | null>(null);
@@ -202,17 +206,43 @@ export function App() {
     setErrors([]);
     const allErrors: { row: number; message: string }[] = [];
     let totalAdded = 0;
+    let unmapped: { grid: GridData; fileName: string } | null = null;
     try {
       for (const file of Array.from(files)) {
         const isXlsx = /\.xlsx$/i.test(file.name);
-        const result = isXlsx
-          ? await parseXlsx(await file.arrayBuffer())
-          : parseCsv(await file.text());
-        allErrors.push(...result.errors);
-        totalAdded += await addTransactions(result.transactions);
+        const outcome = isXlsx
+          ? await parseXlsxOrGrid(await file.arrayBuffer())
+          : parseCsvOrGrid(await file.text());
+        if (outcome.kind === 'needsMapping') {
+          // Stop at the first unrecognized file and let the user map its
+          // columns; any recognized files in the batch are already imported.
+          unmapped = { grid: outcome.grid, fileName: file.name };
+          break;
+        }
+        allErrors.push(...outcome.result.errors);
+        totalAdded += await addTransactions(outcome.result.transactions);
       }
       setErrors(allErrors);
-      setMessage(`Importadas ${totalAdded} transacciones nuevas (las duplicadas se omiten).`);
+      if (unmapped) {
+        if (totalAdded > 0) setMessage(`Importadas ${totalAdded} transacciones. Asociá las columnas del archivo no reconocido.`);
+        setMapper(unmapped);
+      } else {
+        setMessage(`Importadas ${totalAdded} transacciones nuevas (las duplicadas se omiten).`);
+      }
+    } catch (e) {
+      setMessage(`Error al importar: ${(e as Error).message}`);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function handleMappedImport(result: ParseResult) {
+    setMapper(null);
+    setBusy(true);
+    try {
+      setErrors(result.errors);
+      const added = await addTransactions(result.transactions);
+      setMessage(`Importadas ${added} transacciones nuevas (las duplicadas se omiten).`);
     } catch (e) {
       setMessage(`Error al importar: ${(e as Error).message}`);
     } finally {
@@ -324,6 +354,14 @@ export function App() {
   return (
     <div className="app">
       {showTutorial && <Tutorial onClose={() => setShowTutorial(false)} />}
+      {mapper && (
+        <ColumnMapper
+          grid={mapper.grid}
+          fileName={mapper.fileName}
+          onConfirm={handleMappedImport}
+          onCancel={() => setMapper(null)}
+        />
+      )}
       <header className="header">
         <div className="headerTop">
           <h1>📊 Portfolio Manager</h1>
@@ -345,9 +383,10 @@ export function App() {
       <section className="section import">
         <h2 className="sectionTitle">Importar movimientos</h2>
         <p className="hint">
-          Subí el CSV de <strong>movimientos</strong> de Cocos Capital o Bull Market (o el XLSX de
-          PPI) para el análisis completo. ¿Solo querés seguir tu cartera actual? Subí tu
-          <strong> reporte de tenencias</strong> (posiciones de hoy). Podés subir varios archivos.
+          Subí el CSV/XLSX de <strong>movimientos</strong> de tu broker para el análisis completo.
+          Reconoce solo a <strong>Cocos Capital, Bull Market y PPI</strong>; para cualquier otro
+          (Macro Securities, Balanz, IOL…) te abrimos una pantalla para <strong>asociar las
+          columnas</strong> y se importa igual. Podés subir varios archivos.
         </p>
         <div className="importRow">
           <label className="fileBtn">

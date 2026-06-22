@@ -18,12 +18,20 @@ export function Tutorial({ onClose }: Props) {
         </p>
 
         <h2 className="tutH">🟣 Paso 1 · Conseguí tus datos del broker</h2>
-        <p>Entrá a tu broker y descargá el historial de movimientos:</p>
+        <p>Entrá a tu broker (desde la web, suele ser más fácil que la app) y descargá el historial de movimientos:</p>
         <ul className="tutList">
           <li><strong>Cocos Capital:</strong> sección <em>Movimientos</em> → exportar/descargar (<code>.csv</code>).</li>
           <li><strong>Bull Market:</strong> <em>Estado de cuenta / Movimientos</em> → exportar (<code>.csv</code>).</li>
           <li><strong>PPI:</strong> <em>Movimientos / Extracto</em> → exportar a Excel (<code>.xlsx</code>).</li>
+          <li><strong>Macro Securities:</strong> <em>Mi cuenta → Movimientos / Estado de cuenta</em> → exportar (<code>.csv</code> o <code>.xlsx</code>).</li>
+          <li><strong>Balanz:</strong> <em>Cuenta → Movimientos / Histórico</em> → descargar (<code>.csv</code> o <code>.xlsx</code>).</li>
+          <li><strong>IOL (InvertirOnline):</strong> <em>Mi cuenta → Movimientos / Estado de cuenta</em> → exportar a Excel (<code>.xlsx</code>).</li>
         </ul>
+        <p className="hint">
+          💡 Estos últimos tres no se detectan solos, así que al subirlos la app te abre una pantalla
+          para <strong>asociar las columnas</strong> (cuál es la fecha, el tipo, el monto…) una sola
+          vez. Funciona igual con <strong>cualquier otro broker</strong>.
+        </p>
         <p className="hint">
           💡 Bajá el historial completo. Podés subir <strong>varios archivos</strong> (ej. uno por año)
           y la app los une y descarta duplicados solo.

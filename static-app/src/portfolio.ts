@@ -6,8 +6,10 @@ import { detectAndParse } from '../../src/lib/csv/parserRegistry';
 import { computePosition, computePositionTimeline } from '../../src/lib/pnl/engine';
 import type { TimelineInput } from '../../src/lib/pnl/engine';
 import type { ParsedTransaction } from '../../src/lib/csv/types';
+import { parseDelimitedGrid, type GridData } from './genericImport';
 
 export type { ParsedTransaction };
+export type { GridData };
 
 export interface Position {
   ticker: string;
@@ -59,6 +61,65 @@ export async function parseXlsx(buffer: ArrayBuffer): Promise<ImportResult> {
     transactions: result.transactions,
     errors: result.errors.map((e) => ({ row: e.row, message: `[${e.sheet}] ${e.message}` })),
   };
+}
+
+// When a file matches no known broker, we hand the raw grid to the user to map
+// columns by hand (ColumnMapper). This union lets handleFiles branch on it.
+export type ImportOutcome =
+  | { kind: 'parsed'; result: ImportResult }
+  | { kind: 'needsMapping'; grid: GridData };
+
+function cellToString(v: unknown): string {
+  if (v == null) return '';
+  if (v instanceof Date) return v.toISOString();
+  if (typeof v === 'object') {
+    const o = v as Record<string, unknown>;
+    if (typeof o.text === 'string') return o.text;
+    if ('result' in o) return String(o.result ?? '');
+    if (Array.isArray(o.richText)) return o.richText.map((t) => (t as { text?: string }).text ?? '').join('');
+    return String(v);
+  }
+  return String(v);
+}
+
+/** Read the first worksheet of an XLSX into a header+rows grid (lazy exceljs). */
+async function readXlsxGrid(buffer: ArrayBuffer): Promise<GridData> {
+  const ExcelJS = (await import('exceljs')).default;
+  const wb = new ExcelJS.Workbook();
+  await wb.xlsx.load(buffer as unknown as Buffer);
+  const ws = wb.worksheets[0];
+  if (!ws) return { headers: [], rows: [] };
+  const matrix: string[][] = [];
+  ws.eachRow({ includeEmpty: false }, (row) => {
+    const vals = (row.values as unknown[]).slice(1); // exceljs values are 1-based
+    matrix.push(vals.map((v) => cellToString(v).trim()));
+  });
+  const firstIdx = matrix.findIndex((r) => r.some((c) => c !== ''));
+  if (firstIdx < 0) return { headers: [], rows: [] };
+  const [headers, ...rows] = matrix.slice(firstIdx);
+  return { headers, rows };
+}
+
+/** Parse a CSV: use the matching broker parser, or fall back to manual mapping. */
+export function parseCsvOrGrid(text: string): ImportOutcome {
+  try {
+    const { brokerId, transactions, errors } = detectAndParse(text);
+    return { kind: 'parsed', result: { brokerId, transactions, errors } };
+  } catch {
+    return { kind: 'needsMapping', grid: parseDelimitedGrid(text) };
+  }
+}
+
+/** Parse an XLSX: try the PPI parser, else fall back to manual mapping of the
+ *  first sheet (covers Balanz/IOL/Macro and any other Excel export). */
+export async function parseXlsxOrGrid(buffer: ArrayBuffer): Promise<ImportOutcome> {
+  try {
+    const ppi = await parseXlsx(buffer);
+    if (ppi.transactions.length > 0) return { kind: 'parsed', result: ppi };
+  } catch {
+    /* not a PPI workbook — fall through to manual mapping */
+  }
+  return { kind: 'needsMapping', grid: await readXlsxGrid(buffer) };
 }
 
 /** Stable key used to de-duplicate transactions across repeated imports. */
