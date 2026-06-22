@@ -56,12 +56,12 @@ export function Asistente({
       <section className="section">
         <h2 className="sectionTitle">Asistente (IA)</h2>
         <p className="hint">
-          Para habilitar esta función pegá una clave gratuita de Google Gemini (no pide tarjeta).
-          Conseguila en{' '}
+          La IA ya funciona sin configurar nada. Si preferís usar <strong>tu propia</strong> clave
+          gratuita de Google Gemini (no pide tarjeta), pegala acá. Conseguila en{' '}
           <a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener noreferrer">
             aistudio.google.com/apikey
           </a>
-          . La clave se guarda solo en este navegador (localStorage) y nunca se sube a ningún lado.
+          . Se guarda solo en este navegador (localStorage) y nunca se sube a ningún lado.
         </p>
         <div className="importRow">
           <input
@@ -76,6 +76,17 @@ export function Asistente({
             Guardar
           </button>
         </div>
+        <p className="hint">
+          <a
+            href="#"
+            onClick={(e) => {
+              e.preventDefault();
+              setConfigured(true);
+            }}
+          >
+            ← Usar el servicio compartido (sin clave)
+          </a>
+        </p>
       </section>
     );
   }
@@ -94,7 +105,7 @@ export function Asistente({
             setConfigured(false);
           }}
         >
-          Cambiar clave
+          Usar mi propia clave (opcional)
         </a>
         .
       </p>

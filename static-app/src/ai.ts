@@ -1,9 +1,10 @@
-// Free-tier AI assistant. Uses Google Gemini's no-cost API tier (no credit
-// card required) called directly from the browser. Unlike the Finnhub/Twelve
-// Data market-data keys, the Gemini key is NOT embedded in the repo: a Gemini
-// key can be bound to a GCP service account (broader scope than just the AI
-// API), so each user pastes their own key once and we keep it only in their
-// browser's localStorage — it never touches the public source.
+// AI assistant for the portfolio. By default it calls a shared serverless
+// proxy (deployed on Vercel) that holds ONE Gemini key server-side, so a few
+// trusted users can chat with zero setup and without ever seeing the key.
+// A user may optionally paste their OWN Gemini key (kept only in this browser's
+// localStorage, never in the public source); when present we call Gemini
+// directly with it instead of the shared proxy.
+const PROXY_URL = 'https://portfolio-manager-ai-blue.vercel.app/api/ask';
 const GEMINI_URL = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent';
 const KEY_STORAGE = 'pm_gemini_key';
 
@@ -25,8 +26,9 @@ export function setApiKey(key: string): void {
   }
 }
 
+// AI is always available thanks to the shared proxy; a personal key is optional.
 export function isAiConfigured(): boolean {
-  return getApiKey().length > 10;
+  return true;
 }
 
 export interface ChatMessage {
@@ -42,7 +44,6 @@ export async function askPortfolioAI(
   history: ChatMessage[],
 ): Promise<string> {
   const apiKey = getApiKey();
-  if (!apiKey) throw new Error('Falta configurar la clave gratuita de IA (Gemini).');
 
   const contents = [
     { role: 'user', parts: [{ text: `${SYSTEM_PROMPT}\n\nDatos de la cartera:\n${context}` }] },
@@ -50,18 +51,28 @@ export async function askPortfolioAI(
     ...history.map((m) => ({ role: m.role, parts: [{ text: m.text }] })),
     { role: 'user', parts: [{ text: question }] },
   ];
+  const generationConfig = {
+    temperature: 0.3,
+    maxOutputTokens: 500,
+    thinkingConfig: { thinkingBudget: 0 },
+  };
 
-  const res = await fetch(`${GEMINI_URL}?key=${encodeURIComponent(apiKey)}`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      contents,
-      generationConfig: { temperature: 0.3, maxOutputTokens: 500, thinkingConfig: { thinkingBudget: 0 } },
-    }),
-  });
+  // With a personal key, call Gemini directly; otherwise use the shared proxy
+  // (which injects the server-side key and forwards the same request body).
+  const res = apiKey
+    ? await fetch(`${GEMINI_URL}?key=${encodeURIComponent(apiKey)}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ contents, generationConfig }),
+      })
+    : await fetch(PROXY_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ contents, generationConfig }),
+      });
   if (!res.ok) {
     const body = await res.text().catch(() => '');
-    throw new Error(`Gemini respondió ${res.status}: ${body.slice(0, 200)}`);
+    throw new Error(`La IA respondió ${res.status}: ${body.slice(0, 200)}`);
   }
   const data = await res.json();
   const text: string =
