@@ -212,6 +212,13 @@ body {
   text-align: right;
 }
 
+.priceStatic {
+  display: inline-block;
+  color: var(--muted);
+  padding: 6px 8px;
+  cursor: help;
+}
+
 .pos {
   color: var(--pos);
 }

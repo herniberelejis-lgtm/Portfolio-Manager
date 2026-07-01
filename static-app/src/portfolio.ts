@@ -169,6 +169,10 @@ export function opLabel(tx: ParsedTransaction): string {
 export function buildView(
   transactions: ParsedTransaction[],
   prices: Record<string, bigint>,
+  // Tickers that must be valued at their imported cost (weighted-average),
+  // never at a live/stored price. Bonds and FCI quote per 100 nominal value /
+  // in cuotapartes, so a raw quantity*price from data912 overstates them ~100x.
+  snapshotValued?: Set<string>,
 ): PortfolioView {
   const byTicker = new Map<string, { ticker: string; currency: string; txs: TimelineInput[] }>();
 
@@ -192,7 +196,11 @@ export function buildView(
   }
 
   const positions = Array.from(byTicker.values()).map((entry) => {
-    const currentPriceCents = prices[entry.ticker] ?? 0n;
+    // Bonds/FCI: force valuation at weighted-average cost (unrealized P&L ≈ 0),
+    // ignoring any live or previously-stored per-100 price that would inflate it.
+    const currentPriceCents = snapshotValued?.has(entry.ticker)
+      ? computePosition(entry.txs, 0n).avgCostCents
+      : prices[entry.ticker] ?? 0n;
     const r = computePosition(entry.txs, currentPriceCents);
     return {
       ticker: entry.ticker,

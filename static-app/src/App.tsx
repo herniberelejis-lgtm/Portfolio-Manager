@@ -130,8 +130,11 @@ export function App() {
     };
   }, [session]);
 
-  const view = useMemo(() => buildView(transactions, prices), [transactions, prices]);
   const noLivePrice = useMemo(() => noLivePriceTickers(transactions), [transactions]);
+  const view = useMemo(
+    () => buildView(transactions, prices, noLivePrice),
+    [transactions, prices, noLivePrice],
+  );
 
   // Show the tutorial automatically the first time a new user lands with no data.
   useEffect(() => {
@@ -559,13 +562,21 @@ export function App() {
                           <td>{p.quantity}</td>
                           <td>{formatMoney(p.avgCostCents, p.currency)}</td>
                           <td>
-                            <input
-                              className="priceInput"
-                              inputMode="decimal"
-                              value={priceInputs[p.ticker] ?? ''}
-                              onClick={(e) => e.stopPropagation()}
-                              onChange={(e) => updatePrice(p.ticker, e.target.value)}
-                            />
+                            {noLivePrice.has(p.ticker) ? (
+                              // Bonds/FCI are valued at imported cost (quoted per
+                              // 100 VN / in cuotapartes → no reliable live price).
+                              <span className="priceStatic" title="Valuado al costo (bono/FCI)">
+                                {formatMoney(p.avgCostCents, p.currency)}
+                              </span>
+                            ) : (
+                              <input
+                                className="priceInput"
+                                inputMode="decimal"
+                                value={priceInputs[p.ticker] ?? ''}
+                                onClick={(e) => e.stopPropagation()}
+                                onChange={(e) => updatePrice(p.ticker, e.target.value)}
+                              />
+                            )}
                           </td>
                           <td>{formatMoney(p.marketValueCents, p.currency)}</td>
                           <td className={p.unrealizedPnlCents >= 0n ? 'pos' : 'neg'}>

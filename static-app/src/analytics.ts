@@ -20,7 +20,20 @@ export function classifyInstrument(instrumento: string | undefined, tipoOperacio
   if (op.includes('MEP')) return 'Dólar MEP';
   if (i.startsWith('CEDEAR')) return 'CEDEAR';
   if (i.startsWith('FCI')) return 'FCI';
-  if (i.startsWith('ON ') || i.includes('TARJETA NARANJA') || i.includes('OBLIGAC')) return 'Bono/ON';
+  // Sovereign & sub-sovereign bonds and letras are quoted per 100 nominal value,
+  // so a raw quantity*price overstates them ~100x. Catch the common Argentine
+  // prefixes (BONO/BONOS/BONAR/BONCER/BONTE, LETRA/LECAP, TÍTULOS PÚBLICOS) plus
+  // ONs. Ticker examples: GD35, AL30, GD30, TX26…
+  if (
+    i.startsWith('ON ') ||
+    i.startsWith('BON') ||
+    i.startsWith('LETRA') ||
+    i.startsWith('LECAP') ||
+    i.startsWith('TITULO') ||
+    i.includes('TARJETA NARANJA') ||
+    i.includes('OBLIGAC')
+  )
+    return 'Bono/ON';
   if (i) return 'Acción ARG';
   return 'Otro';
 }
