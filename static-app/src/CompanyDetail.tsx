@@ -1,5 +1,14 @@
-import { useEffect, useState } from 'react';
-import { ResponsiveContainer, AreaChart, Area, XAxis, YAxis, Tooltip } from 'recharts';
+import { useEffect, useRef, useState } from 'react';
+import {
+  ResponsiveContainer,
+  AreaChart,
+  Area,
+  XAxis,
+  YAxis,
+  Tooltip,
+  ReferenceArea,
+  ReferenceLine,
+} from 'recharts';
 import { getAnalysis, type Analysis } from './finnhub';
 import { fetchPriceHistory, type PricePoint } from './twelvedata';
 
@@ -82,13 +91,25 @@ function Consensus({ rec }: { rec: NonNullable<Analysis['rec']> }) {
   );
 }
 
+/** Short date label for a 'YYYY-MM-DD' string, parsed as local (no TZ shift). */
+function fmtDate(s: string): string {
+  const [y, m, d] = s.split('-').map(Number);
+  if (!y || !m || !d) return s;
+  return new Date(y, m - 1, d).toLocaleDateString('es-AR', { day: 'numeric', month: 'short' });
+}
+
 function PriceChart({ ticker }: { ticker: string }) {
   const [data, setData] = useState<PricePoint[] | null>(null);
   const [failed, setFailed] = useState(false);
   const [days, setDays] = useState(90);
+  // Drag-to-measure range: two anchors (dates) the user marks on the chart to
+  // read the % change between them, Apple Stocks-style.
+  const [sel, setSel] = useState<{ start: string; end: string } | null>(null);
+  const dragging = useRef(false);
 
   useEffect(() => {
     let cancelled = false;
+    setSel(null);
     fetchPriceHistory(ticker)
       .then((d) => !cancelled && setData(d))
       .catch(() => !cancelled && setFailed(true));
@@ -107,49 +128,127 @@ function PriceChart({ ticker }: { ticker: string }) {
 
   const first = view[0].close;
   const last = view[view.length - 1].close;
+
+  // Resolve the active selection (ordered, both anchors present in the view).
+  let selInfo: { from: string; to: string; startClose: number; endClose: number; pct: number } | null = null;
+  if (sel && sel.start !== sel.end) {
+    let i = view.findIndex((p) => p.date === sel.start);
+    let j = view.findIndex((p) => p.date === sel.end);
+    if (i >= 0 && j >= 0) {
+      if (i > j) [i, j] = [j, i];
+      const startClose = view[i].close;
+      const endClose = view[j].close;
+      selInfo = { from: view[i].date, to: view[j].date, startClose, endClose, pct: (endClose / startClose - 1) * 100 };
+    }
+  }
+
+  // Header %: the marked range if any, otherwise the whole visible period.
+  const headPct = selInfo ? selInfo.pct : (last / first - 1) * 100;
+  const headUp = headPct >= 0;
   const color = last >= first ? '#22c55e' : '#ef4444';
-  const periodPct = ((last / first - 1) * 100).toFixed(1);
+
+  const onDown = (e: any) => {
+    if (!e?.activeLabel) return;
+    dragging.current = true;
+    setSel({ start: e.activeLabel, end: e.activeLabel });
+  };
+  const onMove = (e: any) => {
+    if (!dragging.current || !e?.activeLabel) return;
+    setSel((s) => (s ? { ...s, end: e.activeLabel } : s));
+  };
+  const onUp = () => {
+    dragging.current = false;
+    // A plain tap (no drag) leaves start === end: treat it as "clear".
+    setSel((s) => (s && s.start === s.end ? null : s));
+  };
 
   return (
     <div className="empChart">
       <div className="chartHead">
         <span className="cardLabel">
-          Precio{' '}
-          <span className={last >= first ? 'pos' : 'neg'}>
-            ({last >= first ? '+' : ''}
-            {periodPct}%)
-          </span>
+          {selInfo ? (
+            <>
+              {fmtDate(selInfo.from)} → {fmtDate(selInfo.to)}{' '}
+              <span className={headUp ? 'pos' : 'neg'}>
+                ({headUp ? '+' : ''}
+                {headPct.toFixed(1)}%)
+              </span>
+            </>
+          ) : (
+            <>
+              Precio{' '}
+              <span className={headUp ? 'pos' : 'neg'}>
+                ({headUp ? '+' : ''}
+                {headPct.toFixed(1)}%)
+              </span>
+            </>
+          )}
         </span>
         <div className="filterRow">
           {TIMEFRAMES.map((tf) => (
             <button
               key={tf.label}
               className={`chip ${days === tf.days ? 'chipActive' : ''}`}
-              onClick={() => setDays(tf.days)}
+              onClick={() => {
+                setDays(tf.days);
+                setSel(null);
+              }}
             >
               {tf.label}
             </button>
           ))}
         </div>
       </div>
-      <ResponsiveContainer width="100%" height={190}>
-        <AreaChart data={view} margin={{ top: 6, right: 6, bottom: 0, left: 0 }}>
-          <defs>
-            <linearGradient id={`g-${ticker}`} x1="0" y1="0" x2="0" y2="1">
-              <stop offset="0%" stopColor={color} stopOpacity={0.35} />
-              <stop offset="100%" stopColor={color} stopOpacity={0} />
-            </linearGradient>
-          </defs>
-          <XAxis dataKey="date" hide />
-          <YAxis domain={['auto', 'auto']} width={52} tick={{ fontSize: 11, fill: '#94a3b8' }} />
-          <Tooltip
-            contentStyle={{ background: '#1e293b', border: '1px solid #334155', borderRadius: 8 }}
-            labelStyle={{ color: '#94a3b8' }}
-            formatter={(v) => [`US$ ${Number(v).toLocaleString('es-AR', { maximumFractionDigits: 2 })}`, 'Cierre']}
-          />
-          <Area type="monotone" dataKey="close" stroke={color} fill={`url(#g-${ticker})`} strokeWidth={2} />
-        </AreaChart>
-      </ResponsiveContainer>
+      <div className="chartWrap" style={{ touchAction: 'none', userSelect: 'none' }}>
+        <ResponsiveContainer width="100%" height={190}>
+          <AreaChart
+            data={view}
+            margin={{ top: 6, right: 6, bottom: 0, left: 0 }}
+            onMouseDown={onDown}
+            onMouseMove={onMove}
+            onMouseUp={onUp}
+            onMouseLeave={onUp}
+            onTouchStart={onDown}
+            onTouchMove={onMove}
+            onTouchEnd={onUp}
+          >
+            <defs>
+              <linearGradient id={`g-${ticker}`} x1="0" y1="0" x2="0" y2="1">
+                <stop offset="0%" stopColor={color} stopOpacity={0.35} />
+                <stop offset="100%" stopColor={color} stopOpacity={0} />
+              </linearGradient>
+            </defs>
+            <XAxis dataKey="date" hide />
+            <YAxis domain={['auto', 'auto']} width={52} tick={{ fontSize: 11, fill: '#94a3b8' }} />
+            <Tooltip
+              contentStyle={{ background: '#1e293b', border: '1px solid #334155', borderRadius: 8 }}
+              labelStyle={{ color: '#94a3b8' }}
+              formatter={(v) => [`US$ ${Number(v).toLocaleString('es-AR', { maximumFractionDigits: 2 })}`, 'Cierre']}
+              labelFormatter={(l) => fmtDate(String(l))}
+            />
+            <Area type="monotone" dataKey="close" stroke={color} fill={`url(#g-${ticker})`} strokeWidth={2} />
+            {sel && (
+              <>
+                <ReferenceArea x1={sel.start} x2={sel.end} fill="#f59e0b" fillOpacity={0.12} stroke="none" />
+                <ReferenceLine x={sel.start} stroke="#f59e0b" strokeWidth={1} />
+                <ReferenceLine x={sel.end} stroke="#f59e0b" strokeWidth={1} />
+              </>
+            )}
+          </AreaChart>
+        </ResponsiveContainer>
+      </div>
+      <p className="hint chartHint">
+        {selInfo ? (
+          <>
+            US$ {n(selInfo.startClose)} → US$ {n(selInfo.endClose)} ·{' '}
+            <button className="linkBtn" onClick={() => setSel(null)}>
+              limpiar selección
+            </button>
+          </>
+        ) : (
+          '👆 Arrastrá sobre el gráfico para medir la variación de un tramo.'
+        )}
+      </p>
     </div>
   );
 }
