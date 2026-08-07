@@ -908,3 +908,28 @@ body {
     grid-template-columns: 1fr;
   }
 }
+
+/* Binance / crypto connection */
+.cryptoForm {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-width: 440px;
+  margin-top: 12px;
+}
+.cryptoInput {
+  width: 100%;
+  text-align: left;
+}
+.cryptoForm .fileBtn {
+  margin-top: 6px;
+  align-self: flex-start;
+}
+.cryptoHelp {
+  margin: 10px 0;
+}
+.cryptoHelp summary {
+  cursor: pointer;
+  color: var(--muted);
+  font-weight: 600;
+}

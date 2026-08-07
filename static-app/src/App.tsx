@@ -28,6 +28,7 @@ import { CompanyDetail } from './CompanyDetail';
 import { Riesgo } from './Riesgo';
 import { Tutorial } from './Tutorial';
 import { Asistente } from './Asistente';
+import { Cripto } from './Cripto';
 
 function centsToPesos(cents: bigint): number {
   return Number(cents) / 100;
@@ -87,7 +88,7 @@ export function App() {
   const [busy, setBusy] = useState(false);
   const [mapper, setMapper] = useState<{ grid: GridData; fileName: string } | null>(null);
   const [loadingData, setLoadingData] = useState(false);
-  const [tab, setTab] = useState<'resumen' | 'analisis' | 'riesgo' | 'movimientos' | 'asistente'>('resumen');
+  const [tab, setTab] = useState<'resumen' | 'analisis' | 'riesgo' | 'movimientos' | 'cripto' | 'asistente'>('resumen');
   const [expandedTicker, setExpandedTicker] = useState<string | null>(null);
   const [showTutorial, setShowTutorial] = useState(false);
   const [pricesUpdatedAt, setPricesUpdatedAt] = useState<Date | null>(null);
@@ -457,6 +458,12 @@ export function App() {
               Movimientos
             </button>
             <button
+              className={`tab ${tab === 'cripto' ? 'tabActive' : ''}`}
+              onClick={() => setTab('cripto')}
+            >
+              Cripto
+            </button>
+            <button
               className={`tab ${tab === 'asistente' ? 'tabActive' : ''}`}
               onClick={() => setTab('asistente')}
             >
@@ -466,6 +473,8 @@ export function App() {
 
           {tab === 'movimientos' ? (
             <Movimientos transactions={transactions} />
+          ) : tab === 'cripto' ? (
+            <Cripto />
           ) : tab === 'asistente' ? (
             <Asistente transactions={transactions} prices={prices} />
           ) : tab === 'analisis' ? (
