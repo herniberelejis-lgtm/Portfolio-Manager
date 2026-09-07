@@ -145,6 +145,16 @@ export function txKey(tx: ParsedTransaction): string {
   ].join('|');
 }
 
+// Cash / liquidity-fund rows (Cocos "EFECTIVO / LIQUIDEZ (ARS)") are the cash
+// leg of each trade — parking idle pesos/dollars in a remunerated account, not
+// a tradeable asset. They must never become a position; instead they feed the
+// cash balance (see computeCashByCurrency).
+const CASH_INSTRUMENT = /efectivo|liquidez/i;
+export function isCashRow(tx: ParsedTransaction): boolean {
+  const instr = tx.rawRow?.instrumento;
+  return typeof instr === 'string' && CASH_INSTRUMENT.test(instr);
+}
+
 // MEP dollar operations (a bond bought/sold purely to convert ARS<->USD) and
 // money-market fund (FCI) subscriptions/redemptions are parsed as buy/sell, but
 // they are not real equity positions — counting them creates a phantom holding
@@ -152,8 +162,42 @@ export function txKey(tx: ParsedTransaction): string {
 // label so they're kept in the movements list but excluded from positions.
 const EXCLUDED_OP = /\bmep\b|fci/i;
 export function isExcludedFromPositions(tx: ParsedTransaction): boolean {
+  if (isCashRow(tx)) return true;
   const op = tx.rawRow?.tipoOperacion;
   return typeof op === 'string' && EXCLUDED_OP.test(op);
+}
+
+export interface CashBalance {
+  ARS: bigint;
+  USD: bigint;
+}
+
+/** Free cash held per currency, derived from every movement's cash effect:
+ *  deposits/sells/dividends add, buys/withdrawals/fees subtract. Internal
+ *  liquidity-fund transfers (EFECTIVO/LIQUIDEZ) are skipped — the deposit that
+ *  funded them and the trade that spent them already move the balance, so
+ *  counting the parking leg too would double it. */
+export function computeCashByCurrency(transactions: ParsedTransaction[]): CashBalance {
+  const bal: CashBalance = { ARS: 0n, USD: 0n };
+  for (const tx of transactions) {
+    if (isCashRow(tx)) continue;
+    let delta = 0n;
+    switch (tx.type) {
+      case 'deposit':
+      case 'sell':
+      case 'dividend':
+        delta = tx.amountCents;
+        break;
+      case 'withdrawal':
+      case 'buy':
+      case 'fee':
+        delta = -tx.amountCents;
+        break;
+    }
+    if (tx.currency === 'USD') bal.USD += delta;
+    else bal.ARS += delta;
+  }
+  return bal;
 }
 
 const TYPE_LABEL: Record<ParsedTransaction['type'], string> = {

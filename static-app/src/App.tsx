@@ -2,6 +2,7 @@ import { Fragment, useEffect, useMemo, useState } from 'react';
 import type { Session } from '@supabase/supabase-js';
 import {
   buildView,
+  computeCashByCurrency,
   heldTickers,
   parseCsvOrGrid,
   parseXlsxOrGrid,
@@ -136,6 +137,7 @@ export function App() {
     () => buildView(transactions, prices, noLivePrice),
     [transactions, prices, noLivePrice],
   );
+  const cash = useMemo(() => computeCashByCurrency(transactions), [transactions]);
 
   // Show the tutorial automatically the first time a new user lands with no data.
   useEffect(() => {
@@ -519,6 +521,16 @@ export function App() {
               <div className="card">
                 <span className="cardLabel">Transacciones</span>
                 <span className="cardValue">{transactions.length}</span>
+              </div>
+              <div className={`card ${cash.ARS < 0n ? 'neg' : ''}`}>
+                <span className="cardLabel">Liquidez ARS</span>
+                <span className="cardValue">{formatMoney(cash.ARS, 'ARS')}</span>
+                <span className="cardSub">efectivo en pesos sin invertir</span>
+              </div>
+              <div className={`card ${cash.USD < 0n ? 'neg' : ''}`}>
+                <span className="cardLabel">Liquidez USD</span>
+                <span className="cardValue">{formatMoney(cash.USD, 'USD')}</span>
+                <span className="cardSub">efectivo en dólares sin invertir</span>
               </div>
             </div>
           </section>
