@@ -117,7 +117,17 @@ export async function parseXlsxOrGrid(buffer: ArrayBuffer): Promise<ImportOutcom
     const ppi = await parseXlsx(buffer);
     if (ppi.transactions.length > 0) return { kind: 'parsed', result: ppi };
   } catch {
-    /* not a PPI workbook — fall through to manual mapping */
+    /* not a PPI workbook — fall through */
+  }
+  // "Copa BYMA" tracking workbook (orders on a "Base Operaciones" sheet).
+  try {
+    const { parseCopaBymaWorkbook } = await import('./copaByma');
+    const copa = await parseCopaBymaWorkbook(buffer);
+    if (copa && copa.transactions.length > 0) {
+      return { kind: 'parsed', result: { brokerId: 'copa-byma', ...copa } };
+    }
+  } catch {
+    /* not a Copa BYMA workbook — fall through to manual mapping */
   }
   return { kind: 'needsMapping', grid: await readXlsxGrid(buffer) };
 }
