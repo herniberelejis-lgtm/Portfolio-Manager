@@ -1,17 +1,14 @@
 import { useMemo } from 'react';
 import type { ParsedTransaction } from './portfolio';
 import {
-  arsCashBalanceCents,
   behavior,
   byAssetClass,
   cashFlows,
   computeCosts,
-  currencyExposure,
   operationalQuality,
   perTicker,
+  portfolioSummary,
   realizedByYear,
-  xirr,
-  type Flow,
 } from './analytics';
 import { Benchmarks } from './Benchmarks';
 import { Conclusiones } from './Conclusiones';
@@ -42,55 +39,39 @@ const LIQUIDITY: Record<string, 'alta' | 'media' | 'baja'> = {
 export function Analisis({
   transactions,
   prices,
+  fx: fxRate,
 }: {
   transactions: ParsedTransaction[];
   prices: Record<string, bigint>;
+  // Pesos per dollar (CCL) to put ARS and USD holdings on the same scale.
+  fx: number | null;
 }) {
   const a = useMemo(() => {
     const stats = perTicker(transactions);
     const costs = computeCosts(transactions);
-    const cf = cashFlows(transactions);
     const oq = operationalQuality(stats);
-    const classes = byAssetClass(stats);
+    const classes = byAssetClass(stats, fxRate ?? undefined);
+    const sum = portfolioSummary(transactions, prices, fxRate);
+    const cf = { ...cashFlows(transactions), dividends: sum.dividendsCents, netContributed: sum.netContributedCents };
 
     const held = stats.filter((s) => s.heldQty > 0);
-    let currentValue = 0n;
-    let heldCost = 0n;
     const priceAlerts: { ticker: string; diffPct: number }[] = [];
     for (const s of held) {
       const price = prices[s.ticker] ?? s.avgCostCents;
-      currentValue += BigInt(Math.round(s.heldQty)) * price;
-      heldCost += s.heldCostCents;
       const diff = Number(s.avgCostCents) > 0 ? ((Number(price) - Number(s.avgCostCents)) / Number(s.avgCostCents)) * 100 : 0;
       if (Math.abs(diff) >= 15) priceAlerts.push({ ticker: s.ticker, diffPct: diff });
     }
-    const latent = currentValue - heldCost;
-    const realized = stats.reduce((s, t) => s + t.realizedCents, 0n);
-    const totalPnl = realized + latent + cf.dividends;
-    const returnPct = cf.netContributed > 0n ? (Number(totalPnl) / Number(cf.netContributed)) * 100 : null;
+    const currentValue = sum.currentValueCents;
+    const latent = sum.latentCents;
+    const realized = sum.realizedCents;
+    const totalPnl = sum.totalPnlCents;
+    const returnPct = sum.returnPct;
+    const tir = sum.tir;
 
-    // money-weighted return (XIRR): deposits out, withdrawals in, terminal = holdings + cash
-    const cash = arsCashBalanceCents(transactions);
-    const flows: Flow[] = [];
-    for (const t of transactions) {
-      if (t.currency !== 'ARS') continue;
-      if (t.type === 'deposit') flows.push({ date: t.date, amount: -pesos(t.amountCents) });
-      else if (t.type === 'withdrawal') flows.push({ date: t.date, amount: pesos(t.amountCents) });
-    }
-    flows.push({ date: new Date(), amount: pesos(currentValue + cash) });
-    const tir = xirr(flows);
-
-    // concentration by ticker (ARS, at market)
-    const heldArs = held.filter((s) => s.currency === 'ARS');
-    let totMv = 0n;
-    const mvByTicker = heldArs.map((s) => {
-      const mv = BigInt(Math.round(s.heldQty)) * (prices[s.ticker] ?? s.avgCostCents);
-      totMv += mv;
-      return { ticker: s.ticker, mv, assetClass: s.assetClass };
-    });
-    const conc = mvByTicker
-      .map((x) => ({ ...x, pct: totMv > 0n ? (Number(x.mv) / Number(totMv)) * 100 : 0 }))
-      .sort((x, y) => y.pct - x.pct);
+    // concentration by ticker (all currencies, at market, in pesos)
+    const mvByTicker = sum.conc.map((c) => ({ ticker: c.ticker, mv: c.mvCents, assetClass: c.assetClass }));
+    const totMv = sum.currentValueCents;
+    const conc = sum.conc.map((c) => ({ ticker: c.ticker, mv: c.mvCents, assetClass: c.assetClass, pct: c.pct }));
 
     const maxPos = conc.length ? conc[0].pct : 0;
     const maxClass = classes.length ? Math.max(...classes.map((c) => c.pctOfHeld)) : 0;
@@ -104,7 +85,7 @@ export function Analisis({
     const realizedRows = stats.filter((s) => s.realizedCents !== 0n).sort((x, y) => Number(y.realizedCents - x.realizedCents));
     const beh = behavior(transactions);
     const fiscal = realizedByYear(transactions);
-    const fx = currencyExposure(stats, prices);
+    const fx = { usdPct: sum.usdPct, arsPct: sum.arsPct };
     const startDate = transactions.length
       ? new Date(Math.min(...transactions.map((t) => t.date.getTime())))
       : null;
@@ -134,7 +115,7 @@ export function Analisis({
       tir, conc, riskLevel, liqAltaPct, priceAlerts, realizedRows, held, beh, fiscal, fx, startDate,
       conclusionInput,
     };
-  }, [transactions, prices]);
+  }, [transactions, prices, fxRate]);
 
   return (
     <div>
@@ -361,7 +342,7 @@ export function Analisis({
                 <tr key={s.ticker}>
                   <td className="ticker">{s.ticker}</td>
                   <td className="opCell">{s.assetClass}</td>
-                  <td className={s.realizedCents >= 0n ? 'pos' : 'neg'}>{money(s.realizedCents)}</td>
+                  <td className={s.realizedCents >= 0n ? 'pos' : 'neg'}>{money(s.realizedCents, s.currency)}</td>
                   <td className={s.roiPct != null && s.roiPct >= 0 ? 'pos' : 'neg'}>{pct(s.roiPct)}</td>
                   <td>{s.avgHoldingDays != null ? `${Math.round(s.avgHoldingDays)}d` : '—'}</td>
                 </tr>

@@ -3,17 +3,13 @@
 // Analisis.tsx and insights.ts — no new math, just a different presentation.
 import type { ParsedTransaction } from './portfolio';
 import {
-  arsCashBalanceCents,
   behavior,
   byAssetClass,
-  cashFlows,
   computeCosts,
-  currencyExposure,
   operationalQuality,
   perTicker,
+  portfolioSummary,
   realizedByYear,
-  xirr,
-  type Flow,
 } from './analytics';
 import { coreConclusions, type ConclusionInput } from './insights';
 
@@ -27,50 +23,28 @@ function money(cents: bigint): string {
 export function buildPortfolioContext(
   transactions: ParsedTransaction[],
   prices: Record<string, bigint>,
+  fxArsPerUsd?: number | null,
 ): string {
   if (transactions.length === 0) return 'El usuario todavía no cargó movimientos.';
 
   const stats = perTicker(transactions);
   const costs = computeCosts(transactions);
-  const cf = cashFlows(transactions);
   const oq = operationalQuality(stats);
-  const classes = byAssetClass(stats);
+  const classes = byAssetClass(stats, fxArsPerUsd ?? undefined);
   const held = stats.filter((s) => s.heldQty > 0);
 
-  let currentValue = 0n;
-  let heldCost = 0n;
-  for (const s of held) {
-    const price = prices[s.ticker] ?? s.avgCostCents;
-    currentValue += BigInt(Math.round(s.heldQty)) * price;
-    heldCost += s.heldCostCents;
-  }
-  const latent = currentValue - heldCost;
-  const realized = stats.reduce((s, t) => s + t.realizedCents, 0n);
-  const totalPnl = realized + latent + cf.dividends;
-  const returnPct = cf.netContributed > 0n ? (Number(totalPnl) / Number(cf.netContributed)) * 100 : null;
+  // FX-aware headline numbers (USD converted to pesos at the CCL).
+  const sum = portfolioSummary(transactions, prices, fxArsPerUsd);
+  const cf = { dividends: sum.dividendsCents };
+  const currentValue = sum.currentValueCents;
+  const latent = sum.latentCents;
+  const realized = sum.realizedCents;
+  const totalPnl = sum.totalPnlCents;
+  const returnPct = sum.returnPct;
+  const tir = sum.tir;
+  const conc = sum.conc.map((c) => ({ ticker: c.ticker, pct: c.pct }));
+  const fx = { usdPct: sum.usdPct, arsPct: sum.arsPct };
 
-  const cash = arsCashBalanceCents(transactions);
-  const flows: Flow[] = [];
-  for (const t of transactions) {
-    if (t.currency !== 'ARS') continue;
-    if (t.type === 'deposit') flows.push({ date: t.date, amount: -pesos(t.amountCents) });
-    else if (t.type === 'withdrawal') flows.push({ date: t.date, amount: pesos(t.amountCents) });
-  }
-  flows.push({ date: new Date(), amount: pesos(currentValue + cash) });
-  const tir = xirr(flows);
-
-  const heldArs = held.filter((s) => s.currency === 'ARS');
-  let totMv = 0n;
-  const mvByTicker = heldArs.map((s) => {
-    const mv = BigInt(Math.round(s.heldQty)) * (prices[s.ticker] ?? s.avgCostCents);
-    totMv += mv;
-    return { ticker: s.ticker, mv };
-  });
-  const conc = mvByTicker
-    .map((x) => ({ ticker: x.ticker, pct: totMv > 0n ? (Number(x.mv) / Number(totMv)) * 100 : 0 }))
-    .sort((a, b) => b.pct - a.pct);
-
-  const fx = currencyExposure(stats, prices);
   const beh = behavior(transactions);
   const fiscal = realizedByYear(transactions);
 
@@ -96,7 +70,11 @@ export function buildPortfolioContext(
   const conclusions = coreConclusions(conclusionInput);
 
   const lines: string[] = [];
-  lines.push(`Valor de mercado actual: ${money(currentValue)}.`);
+  lines.push(
+    `Valor de mercado actual: ${money(currentValue)} (todo expresado en pesos` +
+      (sum.fx ? `; lo que está en dólares se convirtió al CCL $${sum.fx.toLocaleString('es-AR', { maximumFractionDigits: 0 })}` : '') +
+      `). Liquidez (efectivo sin invertir): ${money(sum.cashCents)}.`,
+  );
   lines.push(
     `P&L total: ${money(totalPnl)} (${returnPct != null ? returnPct.toFixed(1) + '%' : '—'} sobre aporte neto). ` +
       `P&L realizado: ${money(realized)}. P&L latente: ${money(latent)}. Dividendos cobrados: ${money(cf.dividends)}.`,

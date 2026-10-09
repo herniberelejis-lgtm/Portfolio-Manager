@@ -20,7 +20,8 @@ import {
   insertTransactions,
   upsertPrices,
 } from './remoteStorage';
-import { noLivePriceTickers } from './analytics';
+import { bondTickers, noLivePriceTickers } from './analytics';
+import { fetchCCL, latestValue } from './benchmarks';
 import { Auth } from './Auth';
 import { ChartsTop, ChartsBottom } from './Charts';
 import { Movimientos } from './Movimientos';
@@ -30,6 +31,9 @@ import { Riesgo } from './Riesgo';
 import { Tutorial } from './Tutorial';
 import { Asistente } from './Asistente';
 import { Cripto } from './Cripto';
+
+const FX_KEY = 'pm_fx_ars_usd';
+const FX_MANUAL_KEY = 'pm_fx_manual';
 
 function centsToPesos(cents: bigint): number {
   return Number(cents) / 100;
@@ -93,6 +97,25 @@ export function App() {
   const [expandedTicker, setExpandedTicker] = useState<string | null>(null);
   const [showTutorial, setShowTutorial] = useState(false);
   const [pricesUpdatedAt, setPricesUpdatedAt] = useState<Date | null>(null);
+  // Pesos per dollar used to put ARS and USD holdings on one scale (totals,
+  // % of portfolio, charts). Starts from the last known value, refreshes from
+  // the live CCL, and the user can override it (e.g. with their MEP).
+  const [fx, setFx] = useState<number | null>(() => {
+    try {
+      const v = Number(localStorage.getItem(FX_KEY));
+      return v > 0 ? v : null;
+    } catch {
+      return null;
+    }
+  });
+  const [fxManual, setFxManual] = useState<boolean>(() => {
+    try {
+      return localStorage.getItem(FX_MANUAL_KEY) === '1';
+    } catch {
+      return false;
+    }
+  });
+  const [fxInput, setFxInput] = useState<string>('');
 
   // Track the auth session.
   useEffect(() => {
@@ -133,10 +156,61 @@ export function App() {
   }, [session]);
 
   const noLivePrice = useMemo(() => noLivePriceTickers(transactions), [transactions]);
+  const bonds = useMemo(() => bondTickers(transactions), [transactions]);
   const view = useMemo(
-    () => buildView(transactions, prices, noLivePrice),
-    [transactions, prices, noLivePrice],
+    () => buildView(transactions, prices, noLivePrice, fx ?? undefined),
+    [transactions, prices, noLivePrice, fx],
   );
+  // Converts an amount in its own currency to pesos (for cross-currency sums).
+  const toArs = (cents: bigint, currency: string): bigint =>
+    currency === 'USD' && fx ? BigInt(Math.round(Number(cents) * fx)) : cents;
+
+  // Live CCL (argentinadatos). Skipped when the user pinned their own rate.
+  useEffect(() => {
+    if (fxManual) return;
+    let cancelled = false;
+    fetchCCL()
+      .then((series) => {
+        const v = latestValue(series);
+        if (cancelled || !v) return;
+        setFx(v);
+        try {
+          localStorage.setItem(FX_KEY, String(v));
+        } catch {
+          /* ignore */
+        }
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [fxManual]);
+
+  useEffect(() => {
+    if (fx) setFxInput(fx.toLocaleString('es-AR', { maximumFractionDigits: 2 }));
+  }, [fx]);
+
+  function commitFx(raw: string) {
+    const v = Number(raw.replace(/\./g, '').replace(',', '.'));
+    if (!(v > 0)) {
+      // Empty/invalid: drop the manual override and go back to the live CCL.
+      setFxManual(false);
+      try {
+        localStorage.removeItem(FX_MANUAL_KEY);
+      } catch {
+        /* ignore */
+      }
+      return;
+    }
+    setFx(v);
+    setFxManual(true);
+    try {
+      localStorage.setItem(FX_KEY, String(v));
+      localStorage.setItem(FX_MANUAL_KEY, '1');
+    } catch {
+      /* ignore */
+    }
+  }
   const cash = useMemo(() => computeCashByCurrency(transactions), [transactions]);
 
   // Show the tutorial automatically the first time a new user lands with no data.
@@ -356,6 +430,17 @@ export function App() {
   }
 
   const hasData = transactions.length > 0;
+  const patrimonioArs = view.totals.marketValueCents + cash.ARS + toArs(cash.USD, 'USD');
+
+  // Bonds are quoted per 100 nominal value (US$ 103,08), not per nominal
+  // (US$ 1,03 — which also loses precision). Derive it from the exact cost.
+  function unitPrice(p: (typeof view.positions)[number]): string {
+    if (bonds.has(p.ticker) && p.quantity > 0) {
+      const per100 = BigInt(Math.round((Number(p.marketValueCents) / p.quantity) * 100));
+      return `${formatMoney(per100, p.currency)} c/100`;
+    }
+    return formatMoney(p.avgCostCents, p.currency);
+  }
 
   return (
     <div className="app">
@@ -478,23 +563,23 @@ export function App() {
           ) : tab === 'cripto' ? (
             <Cripto />
           ) : tab === 'asistente' ? (
-            <Asistente transactions={transactions} prices={prices} />
+            <Asistente transactions={transactions} prices={prices} fx={fx} />
           ) : tab === 'analisis' ? (
-            <Analisis transactions={transactions} prices={prices} />
+            <Analisis transactions={transactions} prices={prices} fx={fx} />
           ) : tab === 'riesgo' ? (
             <Riesgo
               holdings={view.positions
                 .filter((p) => !noLivePrice.has(p.ticker))
-                .map((p) => ({ ticker: p.ticker, marketValueCents: p.marketValueCents }))}
+                .map((p) => ({ ticker: p.ticker, marketValueCents: p.valueArsCents }))}
             />
           ) : (
           <>
           <ChartsTop
             positions={view.positions.map((p) => ({
               ticker: p.ticker,
-              marketValue: centsToPesos(p.marketValueCents),
-              unrealizedPnl: centsToPesos(p.unrealizedPnlCents),
-              realizedPnl: centsToPesos(p.realizedPnlCents),
+              marketValue: centsToPesos(p.valueArsCents),
+              unrealizedPnl: centsToPesos(toArs(p.unrealizedPnlCents, p.currency)),
+              realizedPnl: centsToPesos(toArs(p.realizedPnlCents, p.currency)),
               pctOfPortfolio: p.pctOfPortfolio,
             }))}
             history={view.history.map((h) => ({
@@ -507,8 +592,22 @@ export function App() {
           <section className="section">
             <div className="cards">
               <div className="card">
+                <span className="cardLabel">Patrimonio total</span>
+                <span className="cardValue">{formatMoney(patrimonioArs)}</span>
+                <span className="cardSub">
+                  {fx
+                    ? `≈ ${formatMoney(BigInt(Math.round(Number(patrimonioArs) / fx)), 'USD')} · activos + liquidez`
+                    : 'activos + liquidez en pesos'}
+                </span>
+              </div>
+              <div className="card">
                 <span className="cardLabel">Valor de mercado</span>
                 <span className="cardValue">{formatMoney(view.totals.marketValueCents)}</span>
+                {fx && (
+                  <span className="cardSub">
+                    ≈ {formatMoney(BigInt(Math.round(Number(view.totals.marketValueCents) / fx)), 'USD')}
+                  </span>
+                )}
               </div>
               <div className={`card ${view.totals.unrealizedPnlCents >= 0n ? 'pos' : 'neg'}`}>
                 <span className="cardLabel">P&amp;L no realizado</span>
@@ -530,7 +629,9 @@ export function App() {
               <div className={`card ${cash.USD < 0n ? 'neg' : ''}`}>
                 <span className="cardLabel">Liquidez USD</span>
                 <span className="cardValue">{formatMoney(cash.USD, 'USD')}</span>
-                <span className="cardSub">efectivo en dólares sin invertir</span>
+                <span className="cardSub">
+                  efectivo en dólares sin invertir{fx && cash.USD !== 0n ? ` (≈ ${formatMoney(toArs(cash.USD, 'USD'))})` : ''}
+                </span>
               </div>
             </div>
           </section>
@@ -539,6 +640,20 @@ export function App() {
             <div className="tableHeader">
               <h2 className="sectionTitle">Tenencias</h2>
               <div className="priceSync">
+                <label className="fxBox" title="Tipo de cambio para sumar pesos y dólares. Se actualiza solo con el CCL; escribí otro (ej. tu MEP) para fijarlo, o borralo para volver al CCL.">
+                  <span className="hint">{fxManual ? 'Dólar (fijado)' : 'Dólar CCL'} $</span>
+                  <input
+                    className="priceInput fxInput"
+                    inputMode="decimal"
+                    value={fxInput}
+                    placeholder="—"
+                    onChange={(e) => setFxInput(e.target.value)}
+                    onBlur={(e) => commitFx(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') commitFx((e.target as HTMLInputElement).value);
+                    }}
+                  />
+                </label>
                 {pricesUpdatedAt && (
                   <span className="hint">
                     Precios al {pricesUpdatedAt.toLocaleTimeString('es-AR', {
@@ -581,13 +696,13 @@ export function App() {
                             {p.ticker}
                           </td>
                           <td>{p.quantity}</td>
-                          <td>{formatMoney(p.avgCostCents, p.currency)}</td>
+                          <td>{unitPrice(p)}</td>
                           <td>
                             {noLivePrice.has(p.ticker) ? (
                               // Bonds/FCI are valued at imported cost (quoted per
                               // 100 VN / in cuotapartes → no reliable live price).
                               <span className="priceStatic" title="Valuado al costo (bono/FCI)">
-                                {formatMoney(p.avgCostCents, p.currency)}
+                                {unitPrice(p)}
                               </span>
                             ) : (
                               <input
@@ -632,9 +747,9 @@ export function App() {
             riskTickers={view.positions.map((p) => p.ticker).filter((t) => !noLivePrice.has(t))}
             positions={view.positions.map((p) => ({
               ticker: p.ticker,
-              marketValue: centsToPesos(p.marketValueCents),
-              unrealizedPnl: centsToPesos(p.unrealizedPnlCents),
-              realizedPnl: centsToPesos(p.realizedPnlCents),
+              marketValue: centsToPesos(p.valueArsCents),
+              unrealizedPnl: centsToPesos(toArs(p.unrealizedPnlCents, p.currency)),
+              realizedPnl: centsToPesos(toArs(p.realizedPnlCents, p.currency)),
               pctOfPortfolio: p.pctOfPortfolio,
             }))}
             history={view.history.map((h) => ({

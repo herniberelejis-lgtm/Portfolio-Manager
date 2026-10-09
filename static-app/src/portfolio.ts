@@ -20,6 +20,9 @@ export interface Position {
   marketValueCents: bigint;
   unrealizedPnlCents: bigint;
   realizedPnlCents: bigint;
+  // Market value converted to pesos (USD × fx) so positions in different
+  // currencies can be summed, ranked and expressed as % of the portfolio.
+  valueArsCents: bigint;
   pctOfPortfolio: number;
 }
 
@@ -32,6 +35,7 @@ export interface HistoryPoint {
 export interface PortfolioView {
   positions: Position[];
   history: HistoryPoint[];
+  // All totals are in pesos (USD positions converted at fxArsPerUsd).
   totals: {
     marketValueCents: bigint;
     unrealizedPnlCents: bigint;
@@ -227,7 +231,16 @@ export function buildView(
   // never at a live/stored price. Bonds and FCI quote per 100 nominal value /
   // in cuotapartes, so a raw quantity*price from data912 overstates them ~100x.
   snapshotValued?: Set<string>,
+  // Pesos per dollar (e.g. CCL). USD amounts are converted with it so totals,
+  // % of portfolio and the cost history don't add dollars to pesos as if they
+  // were the same unit. Without it, amounts are summed raw (legacy behavior).
+  fxArsPerUsd?: number,
 ): PortfolioView {
+  const toArs = (cents: bigint, currency: string): bigint =>
+    currency === 'USD' && fxArsPerUsd && fxArsPerUsd > 0
+      ? BigInt(Math.round(Number(cents) * fxArsPerUsd))
+      : cents;
+
   const byTicker = new Map<string, { ticker: string; currency: string; txs: TimelineInput[] }>();
 
   for (const tx of transactions) {
@@ -250,12 +263,21 @@ export function buildView(
   }
 
   const positions = Array.from(byTicker.values()).map((entry) => {
-    // Bonds/FCI: force valuation at weighted-average cost (unrealized P&L ≈ 0),
-    // ignoring any live or previously-stored per-100 price that would inflate it.
-    const currentPriceCents = snapshotValued?.has(entry.ticker)
-      ? computePosition(entry.txs, 0n).avgCostCents
-      : prices[entry.ticker] ?? 0n;
-    const r = computePosition(entry.txs, currentPriceCents);
+    let currentPriceCents: bigint;
+    let r: ReturnType<typeof computePosition>;
+    if (snapshotValued?.has(entry.ticker)) {
+      // Bonds/FCI: value at exactly the remaining cost (unrealized P&L = 0),
+      // ignoring any live or stored per-100 price that would inflate it. We
+      // take the remaining cost itself rather than qty × rounded avg price —
+      // a bond quoted ~US$1,0307 per nominal rounds to 1,03 and, over
+      // thousands of nominals, shows a fake P&L of tens of dollars.
+      const base = computePosition(entry.txs, 0n);
+      currentPriceCents = base.avgCostCents;
+      r = { ...base, marketValueCents: -base.unrealizedPnlCents, unrealizedPnlCents: 0n };
+    } else {
+      currentPriceCents = prices[entry.ticker] ?? 0n;
+      r = computePosition(entry.txs, currentPriceCents);
+    }
     return {
       ticker: entry.ticker,
       currency: entry.currency,
@@ -265,6 +287,7 @@ export function buildView(
       marketValueCents: r.marketValueCents,
       unrealizedPnlCents: r.unrealizedPnlCents,
       realizedPnlCents: r.realizedPnlCents,
+      valueArsCents: toArs(r.marketValueCents, entry.currency),
       pctOfPortfolio: 0,
     };
   });
@@ -275,9 +298,9 @@ export function buildView(
   // P&L must include closed positions too (a fully-sold winner/loser still
   // counts), so it sums over every ticker, not just the held ones.
   const totals = {
-    marketValueCents: held.reduce((s, p) => s + p.marketValueCents, 0n),
-    unrealizedPnlCents: held.reduce((s, p) => s + p.unrealizedPnlCents, 0n),
-    realizedPnlCents: positions.reduce((s, p) => s + p.realizedPnlCents, 0n),
+    marketValueCents: held.reduce((s, p) => s + p.valueArsCents, 0n),
+    unrealizedPnlCents: held.reduce((s, p) => s + toArs(p.unrealizedPnlCents, p.currency), 0n),
+    realizedPnlCents: positions.reduce((s, p) => s + toArs(p.realizedPnlCents, p.currency), 0n),
   };
 
   const sortedPositions = held
@@ -285,13 +308,19 @@ export function buildView(
       ...p,
       pctOfPortfolio:
         totals.marketValueCents > 0n
-          ? (Number(p.marketValueCents) / Number(totals.marketValueCents)) * 100
+          ? (Number(p.valueArsCents) / Number(totals.marketValueCents)) * 100
           : 0,
     }))
-    .sort((a, b) => (b.marketValueCents > a.marketValueCents ? 1 : -1));
+    .sort((a, b) => (b.valueArsCents > a.valueArsCents ? 1 : -1));
 
   const timelineEvents = Array.from(byTicker.values())
-    .flatMap((entry) => computePositionTimeline(entry.txs))
+    .flatMap((entry) =>
+      computePositionTimeline(entry.txs).map((ev) => ({
+        ...ev,
+        costDeltaCents: toArs(ev.costDeltaCents, entry.currency),
+        realizedPnlDeltaCents: toArs(ev.realizedPnlDeltaCents, entry.currency),
+      })),
+    )
     .sort((a, b) => a.date.getTime() - b.date.getTime());
 
   let runningCost = 0n;

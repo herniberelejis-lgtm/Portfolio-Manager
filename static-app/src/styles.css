@@ -933,3 +933,14 @@ body {
   color: var(--muted);
   font-weight: 600;
 }
+
+/* FX (dólar) control in the holdings header */
+.fxBox {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  cursor: help;
+}
+.fxInput {
+  width: 90px;
+}

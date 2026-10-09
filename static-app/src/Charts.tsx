@@ -62,9 +62,22 @@ export function ChartsTop({ positions, history }: { positions: ChartPosition[]; 
                 cx="50%"
                 cy="50%"
                 outerRadius={100}
+                // Slices under 3% get no label (they'd pile up on top of each
+                // other); the tooltip and legend still show them.
+                labelLine={(props: any) =>
+                  props.payload?.pct >= 3 ? (
+                    <polyline
+                      points={(props.points ?? []).map((pt: { x: number; y: number }) => `${pt.x},${pt.y}`).join(' ')}
+                      stroke={props.stroke}
+                      fill="none"
+                    />
+                  ) : (
+                    <g />
+                  )
+                }
                 label={(props) => {
                   const e = props.payload as { name: string; pct: number };
-                  return `${e.name} ${e.pct.toFixed(1)}%`;
+                  return e.pct >= 3 ? `${e.name} ${e.pct.toFixed(1)}%` : '';
                 }}
               >
                 {holdingsData.map((_, i) => (

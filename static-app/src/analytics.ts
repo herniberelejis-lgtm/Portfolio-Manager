@@ -4,7 +4,7 @@
 // breakdown (comisión / derechos / IVA) in rawRow, which the parser preserves.
 import type { ParsedTransaction } from './portfolio';
 import { computePosition } from '../../src/lib/pnl/engine';
-import { isExcludedFromPositions } from './portfolio';
+import { buildView, computeCashByCurrency, isExcludedFromPositions } from './portfolio';
 
 export type AssetClass = 'Acción ARG' | 'CEDEAR' | 'Bono/ON' | 'FCI' | 'Dólar MEP' | 'Otro';
 
@@ -55,6 +55,16 @@ export function noLivePriceTickers(transactions: ParsedTransaction[]): Set<strin
   for (const [ticker, t] of seen) {
     const cls = classifyInstrument(t.rawRow?.instrumento, t.rawRow?.tipoOperacion);
     if (cls === 'Bono/ON' || cls === 'FCI') out.add(ticker);
+  }
+  return out;
+}
+
+/** Bonds/ONs held, which brokers quote per 100 nominal value. */
+export function bondTickers(transactions: ParsedTransaction[]): Set<string> {
+  const out = new Set<string>();
+  for (const t of transactions) {
+    if (!t.ticker || out.has(t.ticker)) continue;
+    if (classifyInstrument(t.rawRow?.instrumento, t.rawRow?.tipoOperacion) === 'Bono/ON') out.add(t.ticker);
   }
   return out;
 }
@@ -198,12 +208,21 @@ export function operationalQuality(stats: TickerStats[]): OperationalQuality {
 
 export interface ClassAgg { assetClass: AssetClass; heldCostCents: bigint; realizedCents: bigint; pctOfHeld: number; }
 
-export function byAssetClass(stats: TickerStats[]): ClassAgg[] {
+export function byAssetClass(stats: TickerStats[], fxArsPerUsd?: number): ClassAgg[] {
   const map = new Map<AssetClass, { held: bigint; real: bigint }>();
+  const fx = fxArsPerUsd && fxArsPerUsd > 0 ? fxArsPerUsd : null;
+  const conv = (c: bigint) => BigInt(Math.round(Number(c) * fx!));
   for (const s of stats) {
     const e = map.get(s.assetClass) ?? { held: 0n, real: 0n };
-    if (s.currency === 'ARS') e.held += s.heldCostCents;
-    e.real += s.realizedCents;
+    if (s.currency === 'ARS') {
+      e.held += s.heldCostCents;
+      e.real += s.realizedCents;
+    } else if (fx) {
+      e.held += conv(s.heldCostCents);
+      e.real += conv(s.realizedCents);
+    } else {
+      e.real += s.realizedCents; // legacy: USD cost can't be compared without a rate
+    }
     map.set(s.assetClass, e);
   }
   const totalHeld = Array.from(map.values()).reduce((a, e) => a + e.held, 0n);
@@ -349,4 +368,89 @@ export function xirr(flows: Flow[]): number | null {
     else { lo = mid; flo = fm; }
   }
   return (lo + hi) / 2;
+}
+
+export interface PortfolioSummary {
+  fx: number | null;
+  currentValueCents: bigint; // holdings at market, in pesos
+  latentCents: bigint;
+  realizedCents: bigint;
+  dividendsCents: bigint;
+  netContributedCents: bigint;
+  totalPnlCents: bigint;
+  returnPct: number | null;
+  cashCents: bigint; // ARS + USD cash, in pesos
+  tir: number | null;
+  conc: { ticker: string; pct: number; mvCents: bigint; assetClass: AssetClass }[];
+  usdPct: number;
+  arsPct: number;
+}
+
+/** Single source of truth for the headline numbers shown in Análisis and fed
+ *  to the AI assistant. Everything is expressed in pesos: USD positions, cash,
+ *  deposits and P&L are converted at fxArsPerUsd (e.g. CCL), so a portfolio
+ *  holding both currencies isn't summed as if 1 USD = 1 ARS. Bonds/FCI are
+ *  valued at cost (see buildView). */
+export function portfolioSummary(
+  transactions: ParsedTransaction[],
+  prices: Record<string, bigint>,
+  fxArsPerUsd?: number | null,
+): PortfolioSummary {
+  const fx = fxArsPerUsd && fxArsPerUsd > 0 ? fxArsPerUsd : null;
+  const toArs = (c: bigint, cur: string) => (cur === 'USD' && fx ? BigInt(Math.round(Number(c) * fx)) : c);
+
+  const view = buildView(transactions, prices, noLivePriceTickers(transactions), fx ?? undefined);
+  const classOf = new Map(perTicker(transactions).map((s) => [s.ticker, s.assetClass]));
+
+  let deposits = 0n, withdrawals = 0n, dividends = 0n;
+  const flows: Flow[] = [];
+  for (const t of transactions) {
+    if (t.currency === 'USD' && !fx) continue;
+    const v = toArs(t.amountCents, t.currency);
+    if (t.type === 'deposit') {
+      deposits += v;
+      flows.push({ date: t.date, amount: -Number(v) / 100 });
+    } else if (t.type === 'withdrawal') {
+      withdrawals += v;
+      flows.push({ date: t.date, amount: Number(v) / 100 });
+    } else if (t.type === 'dividend') dividends += v;
+  }
+
+  const cashBal = computeCashByCurrency(transactions);
+  const cashCents = cashBal.ARS + (fx ? toArs(cashBal.USD, 'USD') : 0n);
+  const currentValueCents = view.totals.marketValueCents;
+  flows.push({ date: new Date(), amount: Number(currentValueCents + cashCents) / 100 });
+
+  const latentCents = view.totals.unrealizedPnlCents;
+  const realizedCents = view.totals.realizedPnlCents;
+  const totalPnlCents = realizedCents + latentCents + dividends;
+  const netContributedCents = deposits - withdrawals;
+
+  const conc = view.positions.map((p) => ({
+    ticker: p.ticker,
+    pct: p.pctOfPortfolio,
+    mvCents: p.valueArsCents,
+    assetClass: classOf.get(p.ticker) ?? 'Otro',
+  }));
+  let usd = 0n;
+  for (const p of view.positions) {
+    if (p.currency === 'USD' || classOf.get(p.ticker) === 'CEDEAR') usd += p.valueArsCents;
+  }
+  const usdPct = currentValueCents > 0n ? (Number(usd) / Number(currentValueCents)) * 100 : 0;
+
+  return {
+    fx,
+    currentValueCents,
+    latentCents,
+    realizedCents,
+    dividendsCents: dividends,
+    netContributedCents,
+    totalPnlCents,
+    returnPct: netContributedCents > 0n ? (Number(totalPnlCents) / Number(netContributedCents)) * 100 : null,
+    cashCents,
+    tir: xirr(flows),
+    conc,
+    usdPct,
+    arsPct: 100 - usdPct,
+  };
 }

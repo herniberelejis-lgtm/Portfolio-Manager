@@ -13,9 +13,11 @@ const SUGGESTIONS = [
 export function Asistente({
   transactions,
   prices,
+  fx,
 }: {
   transactions: ParsedTransaction[];
   prices: Record<string, bigint>;
+  fx: number | null;
 }) {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState('');
@@ -41,7 +43,7 @@ export function Asistente({
     setMessages(next);
     setBusy(true);
     try {
-      const context = buildPortfolioContext(transactions, prices);
+      const context = buildPortfolioContext(transactions, prices, fx);
       const answer = await askPortfolioAI(q, context, messages);
       setMessages([...next, { role: 'model', text: answer }]);
     } catch (e) {
