@@ -46,6 +46,7 @@ const TYPE_MAP: Record<string, TransactionType> = {
   'liquidacion rescate fci': 'sell',
   'renta y amortizacion': 'dividend', // bond coupon / principal payments (income)
   'concepto ext migracion': 'deposit', // account-migration cash adjustment
+  gastos: 'fee', // commissions / market fees charged outside a trade row
 };
 
 function parseArgNumber(value: string): number {

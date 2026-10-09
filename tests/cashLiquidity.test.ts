@@ -40,4 +40,19 @@ describe('cash liquidity from EFECTIVO/LIQUIDEZ exports', () => {
     expect(txs.length).toBeGreaterThan(0);
     expect(computeCashByCurrency(txs).ARS).toBe(2580747000n);
   });
+
+  it('subtracts "Gastos" rows and adds bond coupons ("Renta y Amortizacion")', () => {
+    const extra = [
+      CSV,
+      '20;900000020;04-09-2026;07-09-2026;Gastos;;ARS;;;;-13.407,69;0;0;0;-13.407,69;-13.407,69',
+      '21;900000021;01-10-2026;01-10-2026;Renta y Amortizacion;ON PAMPA ENERGIA S.A. CL.27 01/04/29 U$S (MGCTD);USD;BYMA;;;133,29;0;0;0;0;133,29',
+    ].join('\n');
+    const { transactions: txs, errors } = parseCsv(extra);
+    expect(errors).toHaveLength(0);
+    const cash = computeCashByCurrency(txs);
+    expect(cash.ARS).toBe(2580747000n - 1340769n);
+    expect(cash.USD).toBe(13329n);
+    // The coupon is income, not a position.
+    expect(buildView(txs, {}).positions.some((p) => p.ticker === 'MGCTD')).toBe(false);
+  });
 });
