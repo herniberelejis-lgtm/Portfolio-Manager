@@ -6,7 +6,9 @@ import {
   heldTickers,
   parseCsvOrGrid,
   parseXlsxOrGrid,
+  syncBondPrices,
   syncPrices,
+  fetchMep,
   type GridData,
   type ParsedTransaction,
 } from './portfolio';
@@ -116,6 +118,9 @@ export function App() {
     }
   });
   const [fxInput, setFxInput] = useState<string>('');
+  const [fxSource, setFxSource] = useState<'MEP' | 'CCL' | null>(null);
+  // Live bond/ON quotes per 100 VN, fetched each session (never persisted).
+  const [bondPx, setBondPx] = useState<Record<string, bigint>>({});
 
   // Track the auth session.
   useEffect(() => {
@@ -158,33 +163,57 @@ export function App() {
   const noLivePrice = useMemo(() => noLivePriceTickers(transactions), [transactions]);
   const bonds = useMemo(() => bondTickers(transactions), [transactions]);
   const view = useMemo(
-    () => buildView(transactions, prices, noLivePrice, fx ?? undefined),
-    [transactions, prices, noLivePrice, fx],
+    () => buildView(transactions, prices, noLivePrice, fx ?? undefined, bondPx),
+    [transactions, prices, noLivePrice, fx, bondPx],
   );
   // Converts an amount in its own currency to pesos (for cross-currency sums).
   const toArs = (cents: bigint, currency: string): bigint =>
     currency === 'USD' && fx ? BigInt(Math.round(Number(cents) * fx)) : cents;
 
-  // Live CCL (argentinadatos). Skipped when the user pinned their own rate.
+  // Live dollar rate, unless the user pinned their own. Brokers (BYMALAB
+  // included) value dollar holdings at the MEP implied by AL30/AL30D, so we
+  // use that; the CCL is only a fallback if the bond feed is unreachable.
   useEffect(() => {
     if (fxManual) return;
     let cancelled = false;
-    fetchCCL()
-      .then((series) => {
-        const v = latestValue(series);
-        if (cancelled || !v) return;
-        setFx(v);
-        try {
-          localStorage.setItem(FX_KEY, String(v));
-        } catch {
-          /* ignore */
-        }
+    const apply = (v: number, src: 'MEP' | 'CCL') => {
+      if (cancelled) return;
+      setFx(v);
+      setFxSource(src);
+      try {
+        localStorage.setItem(FX_KEY, String(v));
+      } catch {
+        /* ignore */
+      }
+    };
+    fetchMep()
+      .catch(() => null)
+      .then(async (mep) => {
+        if (mep) return apply(mep, 'MEP');
+        const ccl = latestValue(await fetchCCL());
+        if (ccl) apply(ccl, 'CCL');
       })
       .catch(() => {});
     return () => {
       cancelled = true;
     };
   }, [fxManual]);
+
+  // Live bond prices (per 100 VN) for held bonds/ONs.
+  const heldBonds = useMemo(
+    () => heldTickers(transactions).filter((t) => bonds.has(t)),
+    [transactions, bonds],
+  );
+  useEffect(() => {
+    if (!session || heldBonds.length === 0) return;
+    let cancelled = false;
+    syncBondPrices(heldBonds)
+      .then((px) => !cancelled && setBondPx(px))
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [session, heldBonds]);
 
   useEffect(() => {
     if (fx) setFxInput(fx.toLocaleString('es-AR', { maximumFractionDigits: 2 }));
@@ -348,8 +377,12 @@ export function App() {
     setMessage('');
     try {
       const tickers = view.positions.map((p) => p.ticker).filter((t) => !noLivePrice.has(t));
-      const fetched = await syncPrices(tickers);
-      if (Object.keys(fetched).length === 0) {
+      const [fetched, bpx] = await Promise.all([
+        syncPrices(tickers),
+        syncBondPrices(heldBonds).catch(() => ({}) as Record<string, bigint>),
+      ]);
+      if (Object.keys(bpx).length > 0) setBondPx(bpx);
+      if (Object.keys(fetched).length === 0 && Object.keys(bpx).length === 0) {
         setMessage('No se encontraron cotizaciones para tus tickers en data912.');
       } else {
         const next = { ...prices, ...fetched };
@@ -361,7 +394,7 @@ export function App() {
         });
         await upsertPrices(fetched);
         setPricesUpdatedAt(new Date());
-        setMessage(`Precios actualizados para ${Object.keys(fetched).length} activo(s).`);
+        setMessage(`Precios actualizados para ${Object.keys(fetched).length + Object.keys(bpx).length} activo(s).`);
       }
     } catch (e) {
       setMessage(
@@ -430,14 +463,27 @@ export function App() {
   }
 
   const hasData = transactions.length > 0;
-  const patrimonioArs = view.totals.marketValueCents + cash.ARS + toArs(cash.USD, 'USD');
+  const cashUsdArs = toArs(cash.USD, 'USD');
+  const patrimonioArs = view.totals.marketValueCents + cash.ARS + cashUsdArs;
+  // Like the broker, "% de cartera" is over everything you own, cash included.
+  const pctOfPatrimonio = (ars: bigint) =>
+    patrimonioArs > 0n ? (Number(ars) / Number(patrimonioArs)) * 100 : 0;
 
   // Bonds are quoted per 100 nominal value (US$ 103,08), not per nominal
-  // (US$ 1,03 — which also loses precision). Derive it from the exact cost.
-  function unitPrice(p: (typeof view.positions)[number]): string {
+  // (US$ 1,03 — which also loses precision). Cost comes from what's left of
+  // what was paid; price from the market value (live quote or, without one,
+  // the cost itself).
+  type Pos = (typeof view.positions)[number];
+  const per100 = (cents: bigint, q: number) => BigInt(Math.round((Number(cents) / q) * 100));
+  function costLabel(p: Pos): string {
     if (bonds.has(p.ticker) && p.quantity > 0) {
-      const per100 = BigInt(Math.round((Number(p.marketValueCents) / p.quantity) * 100));
-      return `${formatMoney(per100, p.currency)} c/100`;
+      return `${formatMoney(per100(p.marketValueCents - p.unrealizedPnlCents, p.quantity), p.currency)} c/100`;
+    }
+    return formatMoney(p.avgCostCents, p.currency);
+  }
+  function priceLabel(p: Pos): string {
+    if (bonds.has(p.ticker) && p.quantity > 0) {
+      return `${formatMoney(per100(p.marketValueCents, p.quantity), p.currency)} c/100${p.valuedAtCost ? ' (costo)' : ''}`;
     }
     return formatMoney(p.avgCostCents, p.currency);
   }
@@ -563,9 +609,9 @@ export function App() {
           ) : tab === 'cripto' ? (
             <Cripto />
           ) : tab === 'asistente' ? (
-            <Asistente transactions={transactions} prices={prices} fx={fx} />
+            <Asistente transactions={transactions} prices={prices} fx={fx} bondPx={bondPx} />
           ) : tab === 'analisis' ? (
-            <Analisis transactions={transactions} prices={prices} fx={fx} />
+            <Analisis transactions={transactions} prices={prices} fx={fx} bondPx={bondPx} />
           ) : tab === 'riesgo' ? (
             <Riesgo
               holdings={view.positions
@@ -575,13 +621,30 @@ export function App() {
           ) : (
           <>
           <ChartsTop
-            positions={view.positions.map((p) => ({
-              ticker: p.ticker,
-              marketValue: centsToPesos(p.valueArsCents),
-              unrealizedPnl: centsToPesos(toArs(p.unrealizedPnlCents, p.currency)),
-              realizedPnl: centsToPesos(toArs(p.realizedPnlCents, p.currency)),
-              pctOfPortfolio: p.pctOfPortfolio,
-            }))}
+            positions={[
+              ...view.positions.map((p) => ({
+                ticker: p.ticker,
+                marketValue: centsToPesos(p.valueArsCents),
+                unrealizedPnl: centsToPesos(toArs(p.unrealizedPnlCents, p.currency)),
+                realizedPnl: centsToPesos(toArs(p.realizedPnlCents, p.currency)),
+                pctOfPortfolio: pctOfPatrimonio(p.valueArsCents),
+              })),
+              // Cash is part of what you own, as in the broker's composition.
+              ...(
+                [
+                  ['Liquidez USD', cashUsdArs],
+                  ['Liquidez ARS', cash.ARS],
+                ] as const
+              )
+                .filter(([, v]) => v > 0n)
+                .map(([name, v]) => ({
+                  ticker: name,
+                  marketValue: centsToPesos(v),
+                  unrealizedPnl: 0,
+                  realizedPnl: 0,
+                  pctOfPortfolio: pctOfPatrimonio(v),
+                })),
+            ].sort((a, b) => b.marketValue - a.marketValue)}
             history={view.history.map((h) => ({
               date: h.date.toISOString(),
               investedCost: centsToPesos(h.investedCostCents),
@@ -641,7 +704,7 @@ export function App() {
               <h2 className="sectionTitle">Tenencias</h2>
               <div className="priceSync">
                 <label className="fxBox" title="Tipo de cambio para sumar pesos y dólares. Se actualiza solo con el CCL; escribí otro (ej. tu MEP) para fijarlo, o borralo para volver al CCL.">
-                  <span className="hint">{fxManual ? 'Dólar (fijado)' : 'Dólar CCL'} $</span>
+                  <span className="hint">{fxManual ? 'Dólar (fijado)' : `Dólar ${fxSource ?? 'MEP'}`} $</span>
                   <input
                     className="priceInput fxInput"
                     inputMode="decimal"
@@ -696,13 +759,20 @@ export function App() {
                             {p.ticker}
                           </td>
                           <td>{p.quantity}</td>
-                          <td>{unitPrice(p)}</td>
+                          <td>{costLabel(p)}</td>
                           <td>
                             {noLivePrice.has(p.ticker) ? (
                               // Bonds/FCI are valued at imported cost (quoted per
                               // 100 VN / in cuotapartes → no reliable live price).
-                              <span className="priceStatic" title="Valuado al costo (bono/FCI)">
-                                {unitPrice(p)}
+                              <span
+                                className="priceStatic"
+                                title={
+                                  p.valuedAtCost
+                                    ? 'Sin cotización en vivo: valuado al costo'
+                                    : 'Cotización de mercado cada 100 VN (data912)'
+                                }
+                              >
+                                {priceLabel(p)}
                               </span>
                             ) : (
                               <input
@@ -721,7 +791,7 @@ export function App() {
                           <td className={p.realizedPnlCents >= 0n ? 'pos' : 'neg'}>
                             {formatMoney(p.realizedPnlCents, p.currency)}
                           </td>
-                          <td>{p.pctOfPortfolio.toFixed(1)}%</td>
+                          <td>{pctOfPatrimonio(p.valueArsCents).toFixed(1)}%</td>
                         </tr>
                         {isOpen && (
                           <tr className="detailRow">

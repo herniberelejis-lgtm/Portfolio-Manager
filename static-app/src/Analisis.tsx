@@ -40,18 +40,21 @@ export function Analisis({
   transactions,
   prices,
   fx: fxRate,
+  bondPx,
 }: {
   transactions: ParsedTransaction[];
   prices: Record<string, bigint>;
-  // Pesos per dollar (CCL) to put ARS and USD holdings on the same scale.
+  // Pesos per dollar (MEP) to put ARS and USD holdings on the same scale.
   fx: number | null;
+  // Live bond prices per 100 VN (cents).
+  bondPx: Record<string, bigint>;
 }) {
   const a = useMemo(() => {
     const stats = perTicker(transactions);
     const costs = computeCosts(transactions);
     const oq = operationalQuality(stats);
     const classes = byAssetClass(stats, fxRate ?? undefined);
-    const sum = portfolioSummary(transactions, prices, fxRate);
+    const sum = portfolioSummary(transactions, prices, fxRate, bondPx);
     const cf = { ...cashFlows(transactions), dividends: sum.dividendsCents, netContributed: sum.netContributedCents };
 
     const held = stats.filter((s) => s.heldQty > 0);
@@ -115,7 +118,7 @@ export function Analisis({
       tir, conc, riskLevel, liqAltaPct, priceAlerts, realizedRows, held, beh, fiscal, fx, startDate,
       conclusionInput,
     };
-  }, [transactions, prices, fxRate]);
+  }, [transactions, prices, fxRate, bondPx]);
 
   return (
     <div>

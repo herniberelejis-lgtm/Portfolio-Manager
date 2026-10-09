@@ -14,10 +14,12 @@ export function Asistente({
   transactions,
   prices,
   fx,
+  bondPx,
 }: {
   transactions: ParsedTransaction[];
   prices: Record<string, bigint>;
   fx: number | null;
+  bondPx: Record<string, bigint>;
 }) {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState('');
@@ -43,7 +45,7 @@ export function Asistente({
     setMessages(next);
     setBusy(true);
     try {
-      const context = buildPortfolioContext(transactions, prices, fx);
+      const context = buildPortfolioContext(transactions, prices, fx, bondPx);
       const answer = await askPortfolioAI(q, context, messages);
       setMessages([...next, { role: 'model', text: answer }]);
     } catch (e) {

@@ -395,11 +395,12 @@ export function portfolioSummary(
   transactions: ParsedTransaction[],
   prices: Record<string, bigint>,
   fxArsPerUsd?: number | null,
+  bondPricesPer100?: Record<string, bigint>,
 ): PortfolioSummary {
   const fx = fxArsPerUsd && fxArsPerUsd > 0 ? fxArsPerUsd : null;
   const toArs = (c: bigint, cur: string) => (cur === 'USD' && fx ? BigInt(Math.round(Number(c) * fx)) : c);
 
-  const view = buildView(transactions, prices, noLivePriceTickers(transactions), fx ?? undefined);
+  const view = buildView(transactions, prices, noLivePriceTickers(transactions), fx ?? undefined, bondPricesPer100);
   const classOf = new Map(perTicker(transactions).map((s) => [s.ticker, s.assetClass]));
 
   let deposits = 0n, withdrawals = 0n, dividends = 0n;

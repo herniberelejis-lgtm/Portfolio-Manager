@@ -24,6 +24,7 @@ export function buildPortfolioContext(
   transactions: ParsedTransaction[],
   prices: Record<string, bigint>,
   fxArsPerUsd?: number | null,
+  bondPricesPer100?: Record<string, bigint>,
 ): string {
   if (transactions.length === 0) return 'El usuario todavía no cargó movimientos.';
 
@@ -34,7 +35,7 @@ export function buildPortfolioContext(
   const held = stats.filter((s) => s.heldQty > 0);
 
   // FX-aware headline numbers (USD converted to pesos at the CCL).
-  const sum = portfolioSummary(transactions, prices, fxArsPerUsd);
+  const sum = portfolioSummary(transactions, prices, fxArsPerUsd, bondPricesPer100);
   const cf = { dividends: sum.dividendsCents };
   const currentValue = sum.currentValueCents;
   const latent = sum.latentCents;
@@ -72,7 +73,7 @@ export function buildPortfolioContext(
   const lines: string[] = [];
   lines.push(
     `Valor de mercado actual: ${money(currentValue)} (todo expresado en pesos` +
-      (sum.fx ? `; lo que está en dólares se convirtió al CCL $${sum.fx.toLocaleString('es-AR', { maximumFractionDigits: 0 })}` : '') +
+      (sum.fx ? `; lo que está en dólares se convirtió al dólar MEP $${sum.fx.toLocaleString('es-AR', { maximumFractionDigits: 0 })}` : '') +
       `). Liquidez (efectivo sin invertir): ${money(sum.cashCents)}.`,
   );
   lines.push(

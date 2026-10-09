@@ -36,6 +36,12 @@ const COLORS = ['#6366f1', '#22c55e', '#f59e0b', '#ef4444', '#06b6d4', '#a855f7'
 function money(value: number): string {
   return `$ ${value.toLocaleString('es-AR', { maximumFractionDigits: 0 })}`;
 }
+function compactMoney(v: number): string {
+  const a = Math.abs(v);
+  if (a >= 1e6) return `$${(v / 1e6).toLocaleString('es-AR', { maximumFractionDigits: 1 })}M`;
+  if (a >= 1e3) return `$${(v / 1e3).toLocaleString('es-AR', { maximumFractionDigits: 0 })}k`;
+  return `$${v.toLocaleString('es-AR', { maximumFractionDigits: 0 })}`;
+}
 function fmtDate(d: string): string {
   return new Date(d).toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit', year: '2-digit' });
 }
@@ -45,7 +51,11 @@ const tooltipStyle = { background: '#1e293b', border: '1px solid #334155', borde
 export function ChartsTop({ positions, history }: { positions: ChartPosition[]; history: ChartHistoryPoint[] }) {
   if (positions.length === 0) return null;
   const holdingsData = positions.map((p) => ({ name: p.ticker, value: p.marketValue, pct: p.pctOfPortfolio }));
-  const historyData = history.map((h) => ({ date: fmtDate(h.date), investedCost: h.investedCost }));
+  // One point per day (several operations on the same day would repeat the
+  // date on the axis); keep the day's closing value.
+  const byDay = new Map<string, number>();
+  for (const h of history) byDay.set(fmtDate(h.date), h.investedCost);
+  const historyData = Array.from(byDay, ([date, investedCost]) => ({ date, investedCost }));
 
   return (
     <section className="section">
@@ -96,7 +106,7 @@ export function ChartsTop({ positions, history }: { positions: ChartPosition[]; 
             <AreaChart data={historyData}>
               <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
               <XAxis dataKey="date" tick={{ fontSize: 11, fill: '#94a3b8' }} />
-              <YAxis tick={{ fontSize: 11, fill: '#94a3b8' }} />
+              <YAxis tick={{ fontSize: 11, fill: '#94a3b8' }} tickFormatter={compactMoney} width={64} />
               <Tooltip contentStyle={tooltipStyle} formatter={(v) => money(Number(v))} />
               <Area type="monotone" dataKey="investedCost" name="Costo invertido" stroke="#6366f1" fill="#6366f1" fillOpacity={0.3} />
             </AreaChart>

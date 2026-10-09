@@ -23,6 +23,9 @@ export interface Position {
   // Market value converted to pesos (USD × fx) so positions in different
   // currencies can be summed, ranked and expressed as % of the portfolio.
   valueArsCents: bigint;
+  // True when the position is shown at its cost because there's no usable
+  // market price (bonds/FCI without a live quote).
+  valuedAtCost: boolean;
   pctOfPortfolio: number;
 }
 
@@ -235,6 +238,10 @@ export function buildView(
   // % of portfolio and the cost history don't add dollars to pesos as if they
   // were the same unit. Without it, amounts are summed raw (legacy behavior).
   fxArsPerUsd?: number,
+  // Live bond/ON prices per 100 nominal value (cents, in the bond's currency).
+  // Only used for snapshotValued tickers; never persisted, so a stale or
+  // mis-scaled price can't stick the way GD35 did.
+  bondPricesPer100?: Record<string, bigint>,
 ): PortfolioView {
   const toArs = (cents: bigint, currency: string): bigint =>
     currency === 'USD' && fxArsPerUsd && fxArsPerUsd > 0
@@ -265,6 +272,7 @@ export function buildView(
   const positions = Array.from(byTicker.values()).map((entry) => {
     let currentPriceCents: bigint;
     let r: ReturnType<typeof computePosition>;
+    let valuedAtCost = false;
     if (snapshotValued?.has(entry.ticker)) {
       // Bonds/FCI: value at exactly the remaining cost (unrealized P&L = 0),
       // ignoring any live or stored per-100 price that would inflate it. We
@@ -272,8 +280,22 @@ export function buildView(
       // a bond quoted ~US$1,0307 per nominal rounds to 1,03 and, over
       // thousands of nominals, shows a fake P&L of tens of dollars.
       const base = computePosition(entry.txs, 0n);
-      currentPriceCents = base.avgCostCents;
-      r = { ...base, marketValueCents: -base.unrealizedPnlCents, unrealizedPnlCents: 0n };
+      const remainingCost = -base.unrealizedPnlCents;
+      let mv = remainingCost;
+      valuedAtCost = true;
+      const px100 = bondPricesPer100?.[entry.ticker];
+      if (px100 && px100 > 0n && base.quantity > 0) {
+        const live = BigInt(Math.round((base.quantity * Number(px100)) / 100));
+        // Guard against a quote in the wrong unit (e.g. per nominal instead of
+        // per 100): a real price can't be 3x away from what was paid.
+        const ratio = remainingCost > 0n ? Number(live) / Number(remainingCost) : 1;
+        if (ratio > 1 / 3 && ratio < 3) {
+          mv = live;
+          valuedAtCost = false;
+        }
+      }
+      currentPriceCents = base.quantity > 0 ? BigInt(Math.round(Number(mv) / base.quantity)) : 0n;
+      r = { ...base, marketValueCents: mv, unrealizedPnlCents: mv - remainingCost };
     } else {
       currentPriceCents = prices[entry.ticker] ?? 0n;
       r = computePosition(entry.txs, currentPriceCents);
@@ -288,6 +310,7 @@ export function buildView(
       unrealizedPnlCents: r.unrealizedPnlCents,
       realizedPnlCents: r.realizedPnlCents,
       valueArsCents: toArs(r.marketValueCents, entry.currency),
+      valuedAtCost,
       pctOfPortfolio: 0,
     };
   });
@@ -336,6 +359,22 @@ export function buildView(
   });
 
   return { positions: sortedPositions, history, totals };
+}
+
+/** Live bond/ON prices per 100 VN (cents). Best-effort; empty on failure. */
+export async function syncBondPrices(tickers: string[]): Promise<Record<string, bigint>> {
+  if (tickers.length === 0) return {};
+  const { fetchBondPricesPer100 } = await import('../../src/lib/market/data912Client');
+  const raw = await fetchBondPricesPer100(tickers);
+  const out: Record<string, bigint> = {};
+  for (const [t, c] of Object.entries(raw)) out[t] = BigInt(Math.round(c * 100));
+  return out;
+}
+
+/** Dólar MEP implied by AL30/AL30D (pesos per dollar), or null. */
+export async function fetchMep(): Promise<number | null> {
+  const { fetchMepRate } = await import('../../src/lib/market/data912Client');
+  return fetchMepRate();
 }
 
 /** All tickers that currently have an open position (for price syncing). */
